@@ -1,14 +1,14 @@
 CREATE TABLE bill (
     bill_id VARCHAR(30) PRIMARY KEY,
     branch_id VARCHAR(30),
-    amount NUMERIC,
+    amount INTEGER,
     FOREIGN KEY (branch_id) REFERENCES segment(branch_id)
 );
 
 CREATE TABLE customer (
     customer_id VARCHAR(20) PRIMARY KEY,
     street VARCHAR(20),
-    house_number INTEGER,
+    house_number VARCHAR(20),
     city VARCHAR(20),
     country VARCHAR(20)
 );
@@ -24,11 +24,11 @@ ALTER TABLE bill ADD COLUMN holder VARCHAR(50);
 ALTER TABLE bill ADD COLUMN description VARCHAR(255);
 
 ALTER TABLE customer ADD COLUMN age INTEGER;
-ALTER TABLE customer ADD COLUMN salary NUMERIC;
+ALTER TABLE customer ADD COLUMN salary INTEGER;
 ALTER TABLE customer ADD COLUMN nationality VARCHAR(50);
 
 ALTER TABLE partner ADD COLUMN n_clients INTEGER;
-ALTER TABLE partner ADD COLUMN annual_revenue NUMERIC;
+ALTER TABLE partner ADD COLUMN annual_revenue INTEGER;
 ALTER TABLE partner ADD COLUMN headquarters VARCHAR(50);
 
 CREATE TABLE segment (
@@ -45,16 +45,16 @@ CREATE TABLE shareholder (
     customer_id VARCHAR(20),
     shareholder_name VARCHAR(50),
     n_of_shares INTEGER,
-    amount NUMERIC,
+    amount INTEGER,
     FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
 );
 
 CREATE TABLE customer_partner (
-    customer_id VARCHAR(20),
+    customer_id VARCHAR(20),d
     company_name VARCHAR(20),
     contract_type VARCHAR(20),
     contract_date DATE,
-    contract_amount NUMERIC,
+    contract_amount INTEGER,
     contract_description VARCHAR(255),
     PRIMARY KEY (customer_id, company_name),
     FOREIGN KEY (customer_id) REFERENCES customer(customer_id),
