@@ -50,7 +50,7 @@ CREATE TABLE shareholder (
 );
 
 CREATE TABLE customer_partner (
-    customer_id VARCHAR(20),d
+    customer_id VARCHAR(20),
     company_name VARCHAR(20),
     contract_type VARCHAR(20),
     contract_date DATE,
