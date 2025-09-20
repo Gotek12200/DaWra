@@ -125,8 +125,8 @@ INSERT INTO customer (customer_id, street, house_number, city, country, age, sal
 ('C017','Laanstraat',33,'Hilversum','NL',25,3200,'Dutch'),
 ('C018','Singel',50,'Amsterdam','NL',47,6200,'Dutch'),
 ('C019','Brink',15,'Deventer','NL',28,3700,'Dutch'),
-('C020','Vismarkt',5,'Groningen','NL',44,5800,'Dutch');
-('C021','Vismarkt',7,'Groningen','NL',43,5800,'Dutch');
+('C020','Vismarkt',5,'Groningen','NL',44,5800,'Dutch'),
+('C021','Vismarkt',7,'Groningen','NL',43,5800,'Dutch'),
 ('C022','Vismarkt',12,'Groningen','NL',44,5900,'Dutch');
 
 INSERT INTO partner (company_name, country, products_and_services, n_clients, annual_revenue, headquarters) VALUES
@@ -209,4 +209,3 @@ WHERE EXISTS (
   FROM customer_partner cp
   WHERE cp.customer_id = sh.customer_id
 );
-
