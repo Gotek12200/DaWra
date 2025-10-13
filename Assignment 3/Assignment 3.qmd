@@ -22,14 +22,125 @@ Quarto enables you to weave together content and executable code into a finished
 When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
 
 ```{r}
-1 + 3 #test if this works
+# Load necessary packages
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(corrplot)
+library(GGally)
+library(janitor)
 ```
 
 You can add options to executable code like this
 
 ```{r}
-#| echo: false
-2 * 2
+
+# Load data
+train <- readRDS("train.rds")
+test <- readRDS("test.rds")
 ```
 
+```{r}
+
+# Preview the data
+glimpse(train)
+summary(train)
+
+```
+
+
+```{r}
+#Missing Values
+train %>% summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_count") %>%
+  arrange(desc(missing_count))
+
+```
+
+```{r}
+ggplot(train, aes(x = score)) +
+  geom_histogram(fill = "skyblue", color = "white", bins = 20) +
+  theme_minimal() +
+  labs(title = "Distribution of Student Scores",
+       x = "Score", y = "Count")
+
+# Summary statistics for numerical variables
+train %>% 
+  select(where(is.numeric)) %>% 
+  summary()
+
+```
+
+```{r}
+
+# Compute correlation matrix for numeric variables
+num_vars <- train %>% select(where(is.numeric)) %>% select(-score)
+cor_mat <- cor(num_vars, use = "pairwise.complete.obs")
+
+corrplot(cor_mat, method = "color", type = "upper", tl.cex = 0.8)
+
+# Correlation of each numeric variable with score
+correlations <- train %>%
+  select(where(is.numeric)) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  as.data.frame() %>%
+  rownames_to_column("Variable") %>%
+  select(Variable, score) %>%
+  arrange(desc(abs(score)))
+
+head(correlations, 10)
+
+
+```
+```{r}
+
+
+# Handle missing values
+train_clean <- train %>%
+  mutate(across(where(is.numeric), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+# Convert categorical variables to factors
+train_clean <- train_clean %>%
+  mutate(across(where(is.character), as.factor))
+
+glimpse(train_clean)
+
+
+
+```
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
 The `echo: false` option disables the printing of code (only output is displayed).
