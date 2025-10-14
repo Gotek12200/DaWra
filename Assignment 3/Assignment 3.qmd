@@ -139,12 +139,35 @@ for (col_name in names(train_clean)) {
   }
 }
 
+# Create a copy of the data to clean
+train_clean_no_outliers <- train_clean
+
+# Loop through numeric columns
+for (col_name in names(train_clean)) {
+  column <- train_clean_no_outliers[[col_name]]
+  
+  if (is.numeric(column)) {
+    m <- mean(column, na.rm = TRUE)
+    s <- sd(column, na.rm = TRUE)
+    
+# Find indices of outliers
+    outlier_indices <- which(abs(column - m) > 3 * s)
+    
+    if (length(outlier_indices) > 0) {
+      cat("Removing outliers in column:", col_name, "\n")
+      
+# Remove rows with outliers in this column
+      train_clean_no_outliers <- train_clean_no_outliers[-outlier_indices, ]
+    }
+  }
+}
+
 #KNN regression 
 library(kknn)
 
 model <- train.kknn(
   score ~ .,
-  data = train_clean,
+  data = train_clean_no_outliers,
   kmax = 10
 )
 
