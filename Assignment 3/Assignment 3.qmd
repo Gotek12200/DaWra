@@ -109,37 +109,16 @@ glimpse(train_clean)
 
 
 ```
-```{r}
 
+library(kknn)
 
-```
+model <- train.kknn(
+  score ~ .,
+  data = train_clean,
+  kmax = 10
+)
 
-
-```{r}
-
-
-```
-
-```{r}
-
-
-```
-```{r}
-
-
-```
-
-```{r}
-
-
-```
-
-```{r}
-
-
-```
-
-```{r}
+pred <- predict(model, newdata =test)
 
 
 ```
