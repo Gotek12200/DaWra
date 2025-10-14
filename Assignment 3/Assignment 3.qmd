@@ -109,7 +109,37 @@ glimpse(train_clean)
 
 
 ```
+#check for outliers with the statistical approach
+for (col_name in names(train_clean)) {
+  column <- train_clean[[col_name]]
+  
+# Check if column is numeric
+  if (is.numeric(column)) {
+    
+# Calculate mean and standard deviation
+    m <- mean(column, na.rm = TRUE)
+    s <- sd(column, na.rm = TRUE)
+    
+# Find outliers: values more than 3 standard deviations from the mean
+    outlier_indices <- which(abs(column - m) > 3 * s)
+    
+# Print results if outliers found
+    if (length(outlier_indices) > 0) {
+      cat("Outliers found in column:", col_name, "\n")
+      cat("Indices:", outlier_indices, "\n")
+      cat("Values:", column[outlier_indices], "\n\n")
+      
+# Plot with outliers highlighted
+      plot(column, main = paste("Outliers in", col_name),
+           col = ifelse(1:length(column) %in% outlier_indices, "red", "black"),
+           pch = ifelse(1:length(column) %in% outlier_indices, 19, 1),
+           ylab = col_name, xlab = "Index")
+      legend("topright", legend = c("Outlier", "Normal"), col = c("red", "black"), pch = c(19, 1))
+    }
+  }
+}
 
+#KNN regression 
 library(kknn)
 
 model <- train.kknn(
@@ -119,6 +149,7 @@ model <- train.kknn(
 )
 
 pred <- predict(model, newdata =test)
+
 
 
 ```
