@@ -111,65 +111,32 @@ glimpse(train_clean)
 ```
 ```{r}
 #check for outliers with the statistical approach
-for (col_name in names(train_clean)) {
-  column <- train_clean[[col_name]]
-  
-# Check if column is numeric
-  if (is.numeric(column)) {
-    
-# Calculate mean and standard deviation
-    m <- mean(column, na.rm = TRUE)
-    s <- sd(column, na.rm = TRUE)
-    
-# Find outliers: values more than 3 standard deviations from the mean
-    outlier_indices <- which(abs(column - m) > 3 * s)
-    
-# Print results if outliers found
-    if (length(outlier_indices) > 0) {
-      cat("Outliers found in column:", col_name, "\n")
-      cat("Indices:", outlier_indices, "\n")
-      cat("Values:", column[outlier_indices], "\n\n")
+
+numeric_data <- train_clean[sapply(train_clean, is.numeric)]
+z_scores <- scale(numeric_data)
+
+head(z_scores)
+
+outliers <- abs(z_scores) > 3
+head(outliers)
+
+train_cleaned <- train_clean[!apply(outliers, 1, any), ]
+head(data_cleaned)
       
 # Plot with outliers highlighted
-      plot(column, main = paste("Outliers in", col_name),
-           col = ifelse(1:length(column) %in% outlier_indices, "red", "black"),
-           pch = ifelse(1:length(column) %in% outlier_indices, 19, 1),
-           ylab = col_name, xlab = "Index")
-      legend("topright", legend = c("Outlier", "Normal"), col = c("red", "black"), pch = c(19, 1))
-    }
-  }
-}
+numeric_cols <- sapply(train_clean, is.numeric)
+boxplot(train_clean[, numeric_cols],
+        main = "Boxplots of Numeric Variables",
+        las = 2)
 
-# Create a logical vector to mark rows to keep (start with all TRUE)
-rows_to_keep <- rep(TRUE, nrow(train_clean))
-
-# Loop through numeric columns
-for (col_name in names(train_clean)) {
-  column <- train_clean[[col_name]]
-  
-  if (is.numeric(column)) {
-    m <- mean(column, na.rm = TRUE)
-    s <- sd(column, na.rm = TRUE)
-    
-# Identify outlier indices in this column
-    outlier_indices <- which(abs(column - m) > 3 * s)
-    
-    if (length(outlier_indices) > 0) {
-# Mark these rows as FALSE (to be removed)
-      rows_to_keep[outlier_indices] <- FALSE
-    }
-  }
-}
-
-# Subset the data to remove outliers in any numeric column
-train_clean_no_outliers <- train_clean[rows_to_keep, ]
+numeric_cols
 
 #KNN regression without the outliers
 library(kknn)
 
 model <- train.kknn(
   score ~ .,
-  data = train_clean_no_outliers,
+  data = train_cleaned,
   kmax = 10
 )
 
