@@ -109,6 +109,7 @@ glimpse(train_clean)
 
 
 ```
+```{r}
 #check for outliers with the statistical approach
 for (col_name in names(train_clean)) {
   column <- train_clean[[col_name]]
