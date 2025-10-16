@@ -4,7 +4,6 @@ author:
   - Osaro Orebor 1168827
   - Máté Csikós-Nagy 4395565
   - Author Three
-date: 1010-2025 12:00 AM
 format:
   html:
     toc: true
@@ -47,15 +46,6 @@ summary(train)
 
 ```
 
-
-```{r}
-#Missing Values
-train %>% summarise(across(everything(), ~sum(is.na(.)))) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "missing_count") %>%
-  arrange(desc(missing_count))
-
-```
-
 ```{r}
 ggplot(train, aes(x = score)) +
   geom_histogram(fill = "skyblue", color = "white", bins = 20) +
@@ -88,28 +78,33 @@ correlations <- train %>%
   arrange(desc(abs(score)))
 
 head(correlations, 10)
-
-
 ```
+# Data transformation and pre-processing
+
+### Checking for & handling missing values
 ```{r}
+train %>% summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_count") %>%
+  arrange(desc(missing_count))
+```
 
-
-# Handle missing values
+```{r}
 train_clean <- train %>%
   mutate(across(where(is.numeric), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+```
 
-# Convert categorical variables to factors
+### Converting categorical variables to factors
+```{r}
 train_clean <- train_clean %>%
   mutate(across(where(is.character), as.factor))
-
-glimpse(train_clean)
-
-
-
 ```
-```{r}
-#check for outliers with the statistical approach
 
+### Converting yes/no variables to boolean values
+
+### Normalizing numerical values
+
+### Check for outliers with the statistical approach
+```{r}
 numeric_data <- train_clean[sapply(train_clean, is.numeric)]
 z_scores <- scale(numeric_data)
 
@@ -127,7 +122,15 @@ boxplot(train_clean[, numeric_cols],
         las = 2)
 
 numeric_cols
+```
 
+# Model description
+
+Briefly describe which models you compare to perform prediction. (approx. two or three paragraphs)
+
+### Linear regression
+### KNN-regression
+```{r}
 #KNN regression without the outliers
 library(kknn)
 
@@ -147,21 +150,14 @@ model <- train.kknn(
   kmax = 10
 )
 
-pred_with_outliers <- predict(model, newdata =test)
+pred_with_outliers <- predict(model, newdata = test)
 
 #Check the impact of outliers
 differences <- pred - pred_with_outliers
 summary(differences)
 ```
-The `echo: false` option disables the printing of code (only output is displayed).
 
-# Model description
-
-Briefly describe which models you compare to perform prediction. (approx. two or three paragraphs)
-
-# Data transformation and pre-processing
-
-Describe additional pre-processing steps you have used, if any (e.g., dealing with categorical data, scaling). If you do not do any pre-processing, you can leave this section out.
+### Deep learning model
 
 # Model comparison
 
