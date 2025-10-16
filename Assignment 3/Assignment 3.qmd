@@ -2,7 +2,7 @@
 title: "Supervised learning competition"
 author: 
   - Osaro Orebor 1168827
-  - Author Two
+  - Máté Csikós-Nagy 4395565
   - Author Three
 date: 1010-2025 12:00 AM
 format:
@@ -13,16 +13,12 @@ format:
     df-print: kable
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
 ```{r}
-# Load necessary packages
+#| label: R packages
+#| echo: false
+#| warning: false
+#| message: false
+
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
@@ -32,17 +28,19 @@ library(GGally)
 library(janitor)
 ```
 
-You can add options to executable code like this
-
 ```{r}
+#| label: data loading
+#| echo: false
 
-# Load data
 train <- readRDS("train.rds")
 test <- readRDS("test.rds")
 ```
 
-```{r}
+# Data description
 
+Describe the data and use a visualization to support your story. (approx. one or two paragraphs)
+
+```{r}
 # Preview the data
 glimpse(train)
 summary(train)
@@ -121,8 +119,7 @@ outliers <- abs(z_scores) > 3
 head(outliers)
 
 train_cleaned <- train_clean[!apply(outliers, 1, any), ]
-head(data_cleaned)
-      
+
 # Plot with outliers highlighted
 numeric_cols <- sapply(train_clean, is.numeric)
 boxplot(train_clean[, numeric_cols],
@@ -155,7 +152,39 @@ pred_with_outliers <- predict(model, newdata =test)
 #Check the impact of outliers
 differences <- pred - pred_with_outliers
 summary(differences)
-
-
 ```
 The `echo: false` option disables the printing of code (only output is displayed).
+
+# Model description
+
+Briefly describe which models you compare to perform prediction. (approx. two or three paragraphs)
+
+# Data transformation and pre-processing
+
+Describe additional pre-processing steps you have used, if any (e.g., dealing with categorical data, scaling). If you do not do any pre-processing, you can leave this section out.
+
+# Model comparison
+
+Describe how you compare the methods and why. (approx. two or three paragraphs)
+
+# Chosen model
+
+Show which method is best and why. (approx. one paragraph) You are welcome to use tables and plots!
+
+```{r}
+#| label: table example
+data.frame(
+  model       = c("Cool model 1", "Cool model 2"),
+  performance = c(1.2, 1.8),
+  other       = c(0.5, 0.3),
+  notes       = c("Some note", "another note")
+)
+```
+
+# Team member contributions
+
+Write down what each team member contributed to the project.
+
+- Author One: a, b, c
+- Author Two: b, c, d
+- Author Three: a, b, d
