@@ -4,6 +4,7 @@ author:
   - Osaro Orebor 1168827
   - Máté Csikós-Nagy 4395565
   - Fani Profiti 1240390
+  - Yara Yachnyk 4913329
 format:
   html:
     toc: true
