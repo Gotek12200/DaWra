@@ -143,6 +143,23 @@ validation_data <- subset(test_val_data, split2 == False)
 # Model description
 
 ### Linear regression
+
+```{r}
+
+lin_regression <- lm(score ~ ., data = train_data)
+
+#Check the performance of the model
+summary(lin_regression)
+plot(lin_regression)
+
+#calculate the MSE for the linear model
+predictions <- predict(lin_regression, newdata = test_data)
+true_score <- test_data$score
+
+lin_reg_mse <- mean((true_score- predictions)^2)
+
+print(lin_reg_mse)
+```
 ### KNN-regression
 ##The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
 
