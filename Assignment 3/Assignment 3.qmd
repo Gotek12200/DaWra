@@ -3,7 +3,7 @@ title: "Supervised learning competition"
 author: 
   - Osaro Orebor 1168827
   - Máté Csikós-Nagy 4395565
-  - Author Three
+  - Fani Profiti 1240390
 format:
   html:
     toc: true
@@ -126,31 +126,46 @@ numeric_cols
 
 # Model description
 
-Briefly describe which models you compare to perform prediction. (approx. two or three paragraphs)
-
 ### Linear regression
 ### KNN-regression
+##The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
+
 ```{r}
 #KNN regression without the outliers
 library(kknn)
 
-model <- train.kknn(
+model_1 <- train.kknn(
   score ~ .,
-  data = train_cleaned,
-  kmax = 10
+  data = train_clean,
+  kmax = 10,
+  distance = 2,
+  kernel = "optimal"
 )
 
-pred <- predict(model, newdata =test)
+model_1
+
+plot(model_1)
+
+pred <- predict(model_1, newdata =test)
+
 
 #KNN regression with the outliers
 
-model <- train.kknn(
+model_2 <- train.kknn(
   score ~ .,
-  data = train_clean,
-  kmax = 10
+  data = train_cleaned,
+  kmax = 10,
+  distance = 2,
+  kernel = "optimal"
 )
 
-pred_with_outliers <- predict(model, newdata = test)
+model_2
+
+plot(model_2)
+
+
+pred_with_outliers <- predict(model_2, newdata =test)
+
 
 #Check the impact of outliers
 differences <- pred - pred_with_outliers
