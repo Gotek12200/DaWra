@@ -4,6 +4,7 @@ author:
   - Osaro Orebor 1168827
   - Máté Csikós-Nagy 4395565
   - Fani Profiti 1240390
+  - Niels Wagenaar 3133998
 format:
   html:
     toc: true
@@ -25,6 +26,7 @@ library(readr)
 library(corrplot)
 library(GGally)
 library(janitor)
+library(caTools)
 ```
 
 ```{r}
@@ -123,7 +125,21 @@ boxplot(train_clean[, numeric_cols],
 
 numeric_cols
 ```
+# splitting dataset
+here we split the data into our test, train and validation set
 
+```{r}
+set.seed(123)
+#first split it 80 20 for the train and test/val set
+split1 <- sample.split(train_cleaned$score, SplitRatio = 80)
+train_data <- subset(train_cleaned, split1 == TRUE)
+test_val_set <- subset(train_cleaned, split1 == FALSE)
+
+#split the val set 50/50 so each has 10% of the total set
+split2 <- sample.split(test_val_set$score, SplitRatio = 50)
+test_data <- subset(test_val_set, split2 == TRUE)
+val_data <- subset(test_val_set, split2 == TRUE)
+```
 # Model description
 
 ### Linear regression
@@ -171,6 +187,7 @@ pred_with_outliers <- predict(model_2, newdata =test)
 differences <- pred - pred_with_outliers
 summary(differences)
 ```
+###
 
 ### Deep learning model
 
