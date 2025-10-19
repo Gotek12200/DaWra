@@ -135,12 +135,12 @@ set.seed(123)
 #first split the full data set in a 80/20 test train set
 split1 <- sample.split(train_cleaned$score, SplitRatio = 80)
 train_data <- subset(train_cleaned, split1 == TRUE)
-test_val_data <- subset(train_cleaned, split1 == False)
+test_val_data <- subset(train_cleaned, split1 == FALSE)
 
 #then split the test val data 50/50 so they both become 10% of the full dataset
 split2 <- sample.split(test_val_data$score, SplitRatio = 50)
 test_data <- subset(test_val_data, split2 == TRUE)
-validation_data <- subset(test_val_data, split2 == False)
+validation_data <- subset(test_val_data, split2 == FALSE)
 ```
 # Model description
 
