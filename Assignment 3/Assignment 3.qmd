@@ -28,6 +28,7 @@ library(corrplot)
 library(GGally)
 library(janitor)
 library(caTools)
+library(car)
 ```
 
 ```{r}
@@ -105,8 +106,53 @@ train_clean <- train_clean %>%
 ```
 
 ### Converting yes/no variables to boolean values
+```{r}
+# Identify yes/no columns automatically
+yes_no_cols <- names(train_clean)[sapply(train_clean, function(x) {
+  is.character(x) || is.factor(x)
+}) & sapply(train_clean, function(x) {
+  all(unique(na.omit(tolower(x))) %in% c("yes", "no"))
+})]
+
+train_clean <- train_clean %>%
+  mutate(across(all_of(yes_no_cols),
+                ~ tolower(as.character(.)) == "yes"))
+
+```
 
 ### Normalizing numerical values
+
+```{r}
+num_cols <- names(train_clean)[sapply(train_clean, is.numeric)]
+num_cols <- setdiff(num_cols, "score")
+
+#Compute mean and sd for each numeric column
+
+
+
+train_means <- sapply(train_clean[, num_cols, drop = FALSE], mean, na.rm = TRUE)
+train_sds <- sapply(train_clean[, num_cols, drop = FALSE], sd, na.rm = TRUE)
+
+#Avoid division by zero (if a column has zero variance)
+
+
+
+train_sds[train_sds == 0 | is.na(train_sds)] <- 1
+
+#Apply normalization (z-score scaling)
+
+train_clean[, num_cols] <- sweep(
+sweep(train_clean[, num_cols, drop = FALSE], 2, train_means, FUN = "-"),
+2, train_sds, FUN = "/"
+)
+
+#Quick check — means should be ~0, sds ~1
+
+
+
+summary(train_clean[, num_cols])
+
+```
 
 ### Check for outliers with the statistical approach
 ```{r}
@@ -127,6 +173,40 @@ boxplot(train_clean[, numeric_cols],
         las = 2)
 
 numeric_cols
+
+
+
+
+```
+
+```{r}
+colSums(abs(z_scores) > 3)
+numeric_data <- train_clean[sapply(train_clean, is.numeric)]
+num_cols <- setdiff(names(numeric_data), "score")
+
+# Compute z-scores for all numeric variables
+
+
+
+z_scores <- scale(numeric_data)
+
+# Identify rows with any z-score beyond ±3
+
+
+
+outlier_rows <- apply(abs(z_scores[, num_cols]) > 3, 1, any)
+
+# Remove those rows from the dataset
+
+
+
+train_clean_no_outliers <- train_clean[!outlier_rows, ]
+# Check how many were removed
+
+
+
+cat("Removed", sum(outlier_rows), "rows due to |z| > 3 outliers.\n")
+cat("Remaining rows:", nrow(train_clean_no_outliers), "\n")
 ```
 # Train test split
 ```{r}
@@ -163,7 +243,7 @@ lin_reg_mse <- mean((true_score- predictions)^2)
 print(lin_reg_mse)
 ```
 ### KNN-regression
-##The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
+The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
 
 ```{r}
 #KNN regression without the outliers
@@ -226,11 +306,66 @@ data.frame(
   notes       = c("Some note", "another note")
 )
 ```
+# Checking for Multicollinearity
+
+To assess multicollinearity among the independent variables, the Variance Inflation Factor (VIF) was computed using the `car::vif()` function. The Generalized VIF (GVIF) and its adjusted value `GVIF^(1/(2*Df))` were examined to identify any predictors exhibiting high multicollinearity.
+
+| Threshold | Interpretation |
+|------------|----------------|
+| < 2        | Low multicollinearity (ideal) |
+| 2–5        | Moderate multicollinearity (acceptable) |
+| > 5        | High multicollinearity (problematic) |
+
+```{r}
+# Check VIF values
+vif(lin_regression)
+
+```
+
+```{r}
+vif_values <- vif(lin_regression)
+high_vif <- vif_values[vif_values[, "GVIF"] > 5, ]
+high_vif
+
+
+```
+
+#rebuilding the model
+```{r}
+vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
+
+train_data_vif <- train_data[, !(names(train_data) %in% vars_to_remove)]
+test_data_vif <- test_data[, !(names(test_data) %in% vars_to_remove)]
+
+#Fit linear regression without those variables
+
+lin_regression_vif <- lm(score ~ ., data = train_data_vif)
+
+#Summary of the model
+
+summary(lin_regression_vif)
+plot(lin_regression_vif)
+
+#Predict on test data
+
+predictions_vif <- predict(lin_regression_vif, newdata = test_data_vif)
+true_score <- test_data_vif$score
+
+#Compute Mean Squared Error
+
+lin_reg_mse_vif <- mean((true_score - predictions_vif)^2)
+
+
+
+
+cat("Linear Regression MSE (after removing high-VIF variables):",
+round(lin_reg_mse_vif, 4), "\n")
+```
+
 
 # Team member contributions
 
 Write down what each team member contributed to the project.
-
 - Author One: a, b, c
 - Author Two: b, c, d
 - Author Three: a, b, d
