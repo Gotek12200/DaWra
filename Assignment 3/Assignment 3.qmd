@@ -146,7 +146,7 @@ sweep(train_clean[, num_cols, drop = FALSE], 2, train_means, FUN = "-"),
 2, train_sds, FUN = "/"
 )
 
-#Quick check — means should be ~0, sds ~1
+#Quick check, means should be ~0, sds ~1
 
 
 
