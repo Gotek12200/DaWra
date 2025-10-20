@@ -12,6 +12,10 @@ format:
     self-contained: true
     code-fold: true
     df-print: kable
+execute:
+  warning: false
+  message: false
+  echo: true
 ---
 
 ```{r}
@@ -491,4 +495,4 @@ Write down what each team member contributed to the project.
 <ul>
 <li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 <li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
-<li>Author Three: a, b, d
+<li>Osaro Orebor: 
