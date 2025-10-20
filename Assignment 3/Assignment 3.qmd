@@ -248,15 +248,10 @@ temp_ids <- which(!train_split)
 val_ids <- temp_ids[val_split]
 test_ids <- temp_ids[!val_split]
 
-# datasets for linear model (not normalized) 
-train_linear <- train_clean[train_ids, ]
-test_linear <- train_clean[test_ids, ]
-val_linear <- train_clean[val_ids, ]
-
-# dataset for k-nearest neighbors (normalized)
-train_knn <- train_norm[train_ids, ]
-test_knn <- train_norm[test_ids, ]
-val_linear <- train_norm[val_ids, ]
+# dataset for k-nearest neighbors and linear regression (normalized)
+train_set <- train_norm[train_ids, ]
+test_set <- train_norm[test_ids, ]
+val_set <- train_norm[val_ids, ]
 
 # dataset for deep learning (normalized & one-hot encoded)
 train_deep <- train_one_hot[train_ids, ]
@@ -268,15 +263,15 @@ val_deep <- train_one_hot[val_ids, ]
 ### Linear regression
 ```{r}
 #Creating the model
-lin_regression <- lm(score ~ ., data = train_linear)
+lin_regression <- lm(score ~ ., data = train_set)
 
 #Check the performance of the model
 summary(lin_regression)
 plot(lin_regression)
 
 #calculate the MSE for the linear model
-predictions <- predict(lin_regression, newdata = test_linear)
-true_score <- test_linear$score
+predictions <- predict(lin_regression, newdata = test_set)
+true_score <- test_set$score
 
 lin_reg_mse <- mean((true_score- predictions)^2)
 
@@ -289,7 +284,7 @@ The KNN regression is a non-parametric model which makes predictions based on wh
 #KNN regression without the outliers
 model_1 <- train.kknn(
   score ~ .,
-  data = train_knn,
+  data = train_set,
   kmax = 10,
   distance = 2,
   kernel = "optimal"
@@ -299,7 +294,7 @@ model_1
 
 plot(model_1)
 
-pred <- predict(model_1, newdata = test_knn)
+pred <- predict(model_1, newdata = test_set)
 
 
 #KNN regression with the outliers
@@ -316,7 +311,7 @@ model_2
 plot(model_2)
 
 
-pred_wo_outliers <- predict(model_2, newdata =test)
+pred_wo_outliers <- predict(model_2, newdata = test)
 
 #Check the impact of outliers
 differences <- pred - pred_wo_outliers
@@ -327,39 +322,44 @@ summary(differences)
 ```{r}
 # defining input and output
 x_train <- train_deep %>% select(-score) %>% as.matrix()
-y_train <- train_deep$score
-
 x_val <- val_deep %>% select(-score) %>% as.matrix()
-y_val <- val_deep$score
-
 x_test <- test_deep %>% select(-score) %>% as.matrix()
+
+# normalizing scores with z-score normalization 
+y_train <- train_deep$score
+y_val <- val_deep$score
 y_test <- test_deep$score
 
 # defining model
 model <- keras_model_sequential() %>%
   layer_dense(units=32, activation = "relu", input_shape = ncol(x_train)) %>%
-  layer_dropout(rate = 0.3) %>%
-  layer_dense(units = 32, activation = "relu") %>%
+  layer_dropout(rate = 0.1) %>%
+  layer_dense(units = 16, activation = "relu") %>%
   layer_dense(units = 1)
 
 # compiling
 model %>% compile(
   optimizer = "adam",
   loss = "mse",
-  metrics = list("mse")
+  metrics = list("mae","mse")
 )
 
 # training
 history <- model %>% fit(
   x = x_train,
   y = y_train,
-  epochs = 10,
+  epochs = 20,
   validation_data = list(x_val, y_val),
   verbose = 0
 )
 
 # evaluation
 model %>% evaluate(x_test, y_test, verbose = 1)
+predictions <- model %>% predict(x_test)
+
+df <- data.frame(index = 1:length(y_test), actual=y_test, predicted=as.vector(predictions))
+
+ggplot(df, aes(x=index)) + geom_point(aes(y=actual, color="Actual")) + geom_point((aes(y = predicted, color = "Predicted")))
 ```
 
 
@@ -406,8 +406,8 @@ high_vif
 ```{r}
 vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
 
-train_data_vif <- train_linear[, !(names(train_linear) %in% vars_to_remove)]
-test_data_vif <- test_linear[, !(names(test_linear) %in% vars_to_remove)]
+train_data_vif <- train_set[, !(names(train_set) %in% vars_to_remove)]
+test_data_vif <- test_set[, !(names(test_set) %in% vars_to_remove)]
 
 #Fit linear regression without those variables
 lin_regression_vif <- lm(score ~ ., data = train_data_vif)
@@ -431,6 +431,6 @@ round(lin_reg_mse_vif, 4), "\n")
 # Team member contributions
 
 Write down what each team member contributed to the project.
-- Author One: a, b, c
+- Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 - Author Two: b, c, d
 - Author Three: a, b, d
