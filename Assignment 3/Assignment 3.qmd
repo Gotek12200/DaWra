@@ -29,6 +29,9 @@ library(GGally)
 library(janitor)
 library(caTools)
 library(car)
+library(fastDummies)
+library(kknn)
+library(keras3)
 ```
 
 ```{r}
@@ -43,7 +46,7 @@ test <- readRDS("test.rds")
 
 The dataset represents the characteristics of the secondary school students and additional information about their family background with their specific profile information, such as age, education of male or female partent etc.
 
-It has a selection of categorical (factor) (such as school, sex, adress..) and continuous (numeric) quantitative variables such as age, male education, internet etc, the mix of which is well suited for regression or classification tasks. 
+It has a selection of categorical (factor) (such as school, sex, adress..) and continuous (numeric) quantitative variables such as age, as well as boolean yes or no variables. 
 
 The split between males and females is relatively equal (Female: 173, Male: 143). The score range volatiles from -2.71 to 2.23, which shows that the variable is standardized, implying the formula (raw_score-mean/sd) was implied for better interpretation of students' results. 
 
@@ -107,114 +110,127 @@ train_clean <- train %>%
 ```
 
 ### Converting yes/no variables to boolean values
-Similarly, yes or no values will be converted to 0 or 1.
+Similarly, yes or no values will be converted to boolean values.
 ```{r}
-train_clean <- train_clean %>% 
-  mutate(across(c("schoolsup","famsup","paid","activities","nursery","higher", "internet","romantic"), ~ ifelse(. == "yes", 1, 0)))
-```{r}
-# Identify yes/no columns automatically
-yes_no_cols <- names(train_clean)[sapply(train_clean, function(x) {
-  is.character(x) || is.factor(x)
-}) & sapply(train_clean, function(x) {
-  all(unique(na.omit(tolower(x))) %in% c("yes", "no"))
-})]
-
+# Identify yes/no columns automatically and assign them boolean values
 train_clean <- train_clean %>%
-  mutate(across(all_of(yes_no_cols),
-                ~ tolower(as.character(.)) == "yes"))
-
+  mutate(across(
+    where(~ (is.character(.) || is.factor(.)) && all(tolower(unique(.)) %in% c("yes", "no"))),
+    ~ tolower(as.character(.)) == "yes"
+  ))
 ```
 
 ### Normalizing numerical values
 For k-nearest neighbors and neural nets it is essential to normalize numerical values to the same scale, otherwise variables with a different range of values would have a much bigger effect on the model than others. 
 
-
+The numerical variables which are a score from 1-5 (or 1-4) are not continous are scaled using min-max scaling (because we can't assume normal distribution there).
 ```{r}
-num_cols <- names(train_clean)[sapply(train_clean, is.numeric)]
-num_cols <- setdiff(num_cols, "score")
+# scaling 1-5 scores (5 will be 1 and 1 will be scaled to 0)
+train_norm <- train_clean %>% mutate(across(c("famrel","freetime","goout","Dalc","Walc", "health"), ~ (. - 1) / 4))
 
-#Compute mean and sd for each numeric column
+# scaling 1-4 scores (4 will be 1 and 1 will be scaled to 0)
+train_norm <- train_clean %>% mutate(across(c(Medu, Fedu), ~ . / 4))
+```
 
+Some numerical variables are encoding bins (like `studytime` or `traveltime`). In this case, to keep the distances more preserved, we assign the mid-point of the bins and normalize those (for instance the value 2 in studytime means 2 to 5 hours of studying - in this case we replace 2 with 3.5 and normalize that).
+```{r}
+# scaling bin-type variables to their midpoints (traveltime and studytime)
 
+# travel time in minutes with approximate midpoints
+train_norm <- train_norm %>%
+  mutate(traveltime = case_when(
+    traveltime == 1 ~ 7.5,
+    traveltime == 2 ~ 22.5,
+    traveltime == 3 ~ 45,
+    traveltime == 4 ~ 75
+  )) 
 
-train_means <- sapply(train_clean[, num_cols, drop = FALSE], mean, na.rm = TRUE)
-train_sds <- sapply(train_clean[, num_cols, drop = FALSE], sd, na.rm = TRUE)
+# studytime in hours with approximate midpoints
+train_norm <- train_norm %>%
+  mutate(studytime = case_when(
+    studytime == 1 ~ 1,
+    studytime == 2 ~ 3.5,
+    studytime == 3 ~ 7.5,
+    studytime == 4 ~ 12
+  ))
 
-#Avoid division by zero (if a column has zero variance)
+train_norm <- train_norm %>% 
+  mutate(
+    traveltime = (traveltime - min(traveltime)) / (max(traveltime) - min(traveltime)),
+    studytime = (studytime - min(studytime)) / (max(studytime) - min(studytime))
+    )
+```
 
-
-
-train_sds[train_sds == 0 | is.na(train_sds)] <- 1
-
-#Apply normalization (z-score scaling)
-
-train_clean[, num_cols] <- sweep(
-sweep(train_clean[, num_cols, drop = FALSE], 2, train_means, FUN = "-"),
-2, train_sds, FUN = "/"
-)
-
-#Quick check, means should be ~0, sds ~1
-
-
-
-summary(train_clean[, num_cols])
-
+The continous variables like `failures`, `age` and `absences` are normalized using z-score normalization.
+```{r}
+# scaling using normal distribution
+train_norm <- train_norm %>% mutate(across(c(failures, age, absences), ~ as.numeric(scale(.))))
 ```
 
 ### Check for outliers with the statistical approach
+Next we check for outliers, to avoid the influence of some irregular datapoint on the models. We detect the outliers for continous variables by checking whether they are 3 standard deviations from the mean.The variables we check here are `age`, `failures` and `absences`.
 ```{r}
-numeric_data <- train_clean[sapply(train_clean, is.numeric)]
-z_scores <- scale(numeric_data)
+# detecting and counting outliers in continous numerical columns
+z_scores <- train_norm[, c("age","absences","failures")]
+outliers <- as.data.frame(abs(z_scores) > 3)
+colSums(outliers)
+```
+As we can see, there are some outliers in the dataset. Now we can remove them and plot how the distribution changed using boxplots.
+```{r}
+#| warning: false
 
-head(z_scores)
+# replacing outliers with NA
+train_wo_outliers <- train_norm %>% mutate(across(c("age", "failures", "absences"), ~ ifelse(outliers[[cur_column()]], NA, .)))
 
-outliers <- abs(z_scores) > 3
-head(outliers)
+# creating data plot for plotting
+before_after <- data.frame(
+    age_before = z_scores$age,
+    age_after = train_wo_outliers$age,
+    absences_before = z_scores$absences,
+    absences_after = train_wo_outliers$absences,
+    failures_before = z_scores$failures,
+    failures_after = train_wo_outliers$failures
+)
 
-train_cleaned <- train_clean[!apply(outliers, 1, any), ]
+# long format for boxplots
+before_after <- before_after %>% pivot_longer(
+  cols = everything(),
+  names_to = c("variable", "time"),
+  names_sep = "_",
+  values_to = "value"
+) %>% 
+  mutate(time = factor(time, levels = c("before", "after")))
 
-# Plot with outliers highlighted
-numeric_cols <- sapply(train_clean, is.numeric)
-boxplot(train_clean[, numeric_cols],
-        main = "Boxplots of Numeric Variables",
-        las = 2)
+# Before after plot
+ggplot(before_after, aes(x=variable, y=value, fill=time)) + 
+  geom_boxplot()
 
-numeric_cols
-
-
-
-
+# Removing NA rows from the dataset (actually removing the outliers)
+cat("Rows containing outliers:", sum(!complete.cases(train_wo_outliers)), "\n")
+train_wo_outliers <- na.omit(train_wo_outliers)
+cat("Remaining rows:", nrow(train_wo_outliers), "\n")
 ```
 
+### One-hot-encoding for categorical values
+Deep learning can only handle numerical values, so we need to create a one-hot encoding for all categorical variables.
 ```{r}
-colSums(abs(z_scores) > 3)
-numeric_data <- train_clean[sapply(train_clean, is.numeric)]
-num_cols <- setdiff(names(numeric_data), "score")
+nominal_vars <- c("Mjob","Fjob","reason","guardian")
 
-# Compute z-scores for all numeric variables
-
-
-
-z_scores <- scale(numeric_data)
-
-# Identify rows with any z-score beyond ±3
-
-
-
-outlier_rows <- apply(abs(z_scores[, num_cols]) > 3, 1, any)
-
-# Remove those rows from the dataset
-
-
-
-train_clean_no_outliers <- train_clean[!outlier_rows, ]
-# Check how many were removed
-
-
-
-cat("Removed", sum(outlier_rows), "rows due to |z| > 3 outliers.\n")
-cat("Remaining rows:", nrow(train_clean_no_outliers), "\n")
+train_one_hot <- dummy_cols(
+  train_norm,
+  select_columns = nominal_vars,
+  remove_selected_columns = TRUE
+)
 ```
+
+We also need to convert binary factors to 0 or 1.
+```{r}
+binary_vars <- c("school","sex","address", "famsize", "Pstatus")
+
+# assigning TRUE or FALSE to binary values (the second possible value is assigned 1 the first 0)
+train_one_hot <- train_one_hot %>% mutate(across(all_of(binary_vars), ~ as.integer(.x == levels(.x)[2])))
+```
+
 
 ### Train test split
 We need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
@@ -222,31 +238,45 @@ We need to split the train dataset to a sample used for training, a sample used 
 # set seed for reproducibility
 set.seed(123)
 
-#first split the full data set in a 80/20 test train set
-split1 <- sample.split(train_cleaned$score, SplitRatio = 80)
-train_data <- subset(train_cleaned, split1 == TRUE)
-test_val_data <- subset(train_cleaned, split1 == FALSE)
+#first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
+train_split <- sample.split(train$score, SplitRatio = 0.8)
+val_split <- sample.split(train$score[!train_split], SplitRatio = 0.5)
 
-#then split the test val data 50/50 so they both become 10% of the full dataset
-split2 <- sample.split(test_val_data$score, SplitRatio = 50)
-test_data <- subset(test_val_data, split2 == TRUE)
-validation_data <- subset(test_val_data, split2 == FALSE)
+# save the row indices that are part of the set
+train_ids <- which(train_split)
+temp_ids <- which(!train_split)
+val_ids <- temp_ids[val_split]
+test_ids <- temp_ids[!val_split]
+
+# datasets for linear model (not normalized) 
+train_linear <- train_clean[train_ids, ]
+test_linear <- train_clean[test_ids, ]
+val_linear <- train_clean[val_ids, ]
+
+# dataset for k-nearest neighbors (normalized)
+train_knn <- train_norm[train_ids, ]
+test_knn <- train_norm[test_ids, ]
+val_linear <- train_norm[val_ids, ]
+
+# dataset for deep learning (normalized & one-hot encoded)
+train_deep <- train_one_hot[train_ids, ]
+test_deep <- train_one_hot[test_ids, ]
+val_deep <- train_one_hot[val_ids, ]
 ```
 # Model description
 
 ### Linear regression
-
 ```{r}
-
-lin_regression <- lm(score ~ ., data = train_data)
+#Creating the model
+lin_regression <- lm(score ~ ., data = train_linear)
 
 #Check the performance of the model
 summary(lin_regression)
 plot(lin_regression)
 
 #calculate the MSE for the linear model
-predictions <- predict(lin_regression, newdata = test_data)
-true_score <- test_data$score
+predictions <- predict(lin_regression, newdata = test_linear)
+true_score <- test_linear$score
 
 lin_reg_mse <- mean((true_score- predictions)^2)
 
@@ -257,11 +287,9 @@ The KNN regression is a non-parametric model which makes predictions based on wh
 
 ```{r}
 #KNN regression without the outliers
-library(kknn)
-
 model_1 <- train.kknn(
   score ~ .,
-  data = train_clean,
+  data = train_knn,
   kmax = 10,
   distance = 2,
   kernel = "optimal"
@@ -271,14 +299,13 @@ model_1
 
 plot(model_1)
 
-pred <- predict(model_1, newdata =test)
+pred <- predict(model_1, newdata = test_knn)
 
 
 #KNN regression with the outliers
-
 model_2 <- train.kknn(
   score ~ .,
-  data = train_cleaned,
+  data = train_wo_outliers,
   kmax = 10,
   distance = 2,
   kernel = "optimal"
@@ -289,15 +316,53 @@ model_2
 plot(model_2)
 
 
-pred_with_outliers <- predict(model_2, newdata =test)
-
+pred_wo_outliers <- predict(model_2, newdata =test)
 
 #Check the impact of outliers
-differences <- pred - pred_with_outliers
+differences <- pred - pred_wo_outliers
 summary(differences)
 ```
 
 ### Deep learning model
+```{r}
+# defining input and output
+x_train <- train_deep %>% select(-score) %>% as.matrix()
+y_train <- train_deep$score
+
+x_val <- val_deep %>% select(-score) %>% as.matrix()
+y_val <- val_deep$score
+
+x_test <- test_deep %>% select(-score) %>% as.matrix()
+y_test <- test_deep$score
+
+# defining model
+model <- keras_model_sequential() %>%
+  layer_dense(units=32, activation = "relu", input_shape = ncol(x_train)) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1)
+
+# compiling
+model %>% compile(
+  optimizer = "adam",
+  loss = "mse",
+  metrics = list("mse")
+)
+
+# training
+history <- model %>% fit(
+  x = x_train,
+  y = y_train,
+  epochs = 10,
+  validation_data = list(x_val, y_val),
+  verbose = 0
+)
+
+# evaluation
+model %>% evaluate(x_test, y_test, verbose = 1)
+```
+
+
 
 # Model comparison
 
@@ -329,44 +394,34 @@ To assess multicollinearity among the independent variables, the Variance Inflat
 ```{r}
 # Check VIF values
 vif(lin_regression)
-
 ```
 
 ```{r}
 vif_values <- vif(lin_regression)
 high_vif <- vif_values[vif_values[, "GVIF"] > 5, ]
 high_vif
-
-
 ```
 
-#rebuilding the model
+# Rebuilding the model
 ```{r}
 vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
 
-train_data_vif <- train_data[, !(names(train_data) %in% vars_to_remove)]
-test_data_vif <- test_data[, !(names(test_data) %in% vars_to_remove)]
+train_data_vif <- train_linear[, !(names(train_linear) %in% vars_to_remove)]
+test_data_vif <- test_linear[, !(names(test_linear) %in% vars_to_remove)]
 
 #Fit linear regression without those variables
-
 lin_regression_vif <- lm(score ~ ., data = train_data_vif)
 
 #Summary of the model
-
 summary(lin_regression_vif)
 plot(lin_regression_vif)
 
 #Predict on test data
-
 predictions_vif <- predict(lin_regression_vif, newdata = test_data_vif)
 true_score <- test_data_vif$score
 
 #Compute Mean Squared Error
-
 lin_reg_mse_vif <- mean((true_score - predictions_vif)^2)
-
-
-
 
 cat("Linear Regression MSE (after removing high-VIF variables):",
 round(lin_reg_mse_vif, 4), "\n")
