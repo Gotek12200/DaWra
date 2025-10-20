@@ -20,7 +20,6 @@ execute:
 # Loading Library
 ```{r}
 #| label: R packages
-#| echo: false
 #| warning: false
 #| message: false
 
@@ -41,8 +40,6 @@ library(tensorflow)
 # Loading in the Data
 ```{r}
 #| label: data loading
-#| echo: false
-
 train <- readRDS("train.rds")
 test <- readRDS("test.rds")
 ```
@@ -57,7 +54,7 @@ The split between males and females is relatively equal (Female: 173, Male: 143)
 
 Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, showcasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm.
 
-##Score distribution
+## Score distribution
 
 ```{r}
 ggplot(train, aes(x = score)) +
@@ -99,6 +96,7 @@ correlations <- train %>%
 head(correlations, 10)
 ```
 There are some predictors that have a higher correlation, later in the report we will check the Multicollinearity to see if they influence the model/
+
 # Data transformation and pre-processing
 
 ### Checking for & handling missing values
@@ -274,7 +272,7 @@ A linear regression model is a parametric method that assumes a linear relations
 ## Linear regression
 ```{r}
 #Creating the model
-lin_regression <- lm(score ~ ., data = train_wo_outliers)
+lin_regression <- lm(score ~ ., data = train_set)
 
 #Check the performance of the model
 summary(lin_regression)
@@ -529,6 +527,6 @@ Write down what each team member contributed to the project.
 <ul>
 <li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 <li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
-<li>Osaro Orebor: Preprocessing step and handeling the assumptions. I made the layout look nice 
+<li>Osaro Orebor: Preprocessing step and handling the assumptions. I made the layout look nice 
 <li>Niels Wagenaar: trained linear regression and wrote the description
 
