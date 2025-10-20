@@ -32,6 +32,7 @@ library(car)
 library(fastDummies)
 library(kknn)
 library(keras3)
+library(tensorflow)
 ```
 
 ```{r}
@@ -129,7 +130,7 @@ The numerical variables which are a score from 1-5 (or 1-4) are not continous ar
 train_norm <- train_clean %>% mutate(across(c("famrel","freetime","goout","Dalc","Walc", "health"), ~ (. - 1) / 4))
 
 # scaling 1-4 scores (4 will be 1 and 1 will be scaled to 0)
-train_norm <- train_clean %>% mutate(across(c(Medu, Fedu), ~ . / 4))
+train_norm <- train_norm %>% mutate(across(c(Medu, Fedu), ~ . / 4))
 ```
 
 Some numerical variables are encoding bins (like `studytime` or `traveltime`). In this case, to keep the distances more preserved, we assign the mid-point of the bins and normalize those (for instance the value 2 in studytime means 2 to 5 hours of studying - in this case we replace 2 with 3.5 and normalize that).
@@ -277,6 +278,7 @@ lin_reg_mse <- mean((true_score- predictions_linear)^2)
 print(lin_reg_mse)
 ```
 The fitted model explains approximately 35.5% of the variance in student scores, indicating that at least one of the predictors contributes to explaining variation in the dependent variable.
+
 ### Assumption Checking
 
 1. Residuals vs Fitted
@@ -383,8 +385,11 @@ summary(differences)
 ```
 
 ## Deep learning model
-For deep learning we use 2 hidden layers with 32 and 16 nodes, with ReLu activations. There is also a dropout of 0.2 between layers. Since the training data has relatively few entries, we only do a few epochs to avoid overfitting. For the training the ADAM optimizer is used and the loss function is the mean-squared error.
+For the deep learning we try to use a complex model that should be more than able to learn the pattern in the data. We use 3 layers with 128, 64 and 32 nodes respectively, with a 0.2 dropout between the layers. The training runs for 1000 epochs with an early stopping monitor that stops the training earlier once the model starts to overfit. 
 ```{r}
+# setting seed for reproducability
+tf$random$set_seed(123L)
+
 # defining input and output
 x_train <- train_deep %>% select(-score) %>% as.matrix()
 x_val <- val_deep %>% select(-score) %>% as.matrix()
@@ -397,14 +402,16 @@ y_test <- test_deep$score
 
 # defining model
 model <- keras_model_sequential() %>%
-  layer_dense(units=32, activation = "relu", input_shape = ncol(x_train)) %>%
-  layer_dropout(rate = 0.1) %>%
-  layer_dense(units = 16, activation = "relu") %>%
+  layer_dense(units= 128, activation = "relu", input_shape = ncol(x_train)) %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dropout(rate=0.2) %>%
+  layer_dense(units = 32, activation = "relu") %>%
   layer_dense(units = 1)
 
 # compiling
 model %>% compile(
-  optimizer = "adam",
+  optimizer = optimizer_adam(learning_rate = 0.0003),
   loss = "mse",
   metrics = list("mae","mse")
 )
@@ -413,8 +420,10 @@ model %>% compile(
 history <- model %>% fit(
   x = x_train,
   y = y_train,
-  epochs = 20,
+  epochs = 1000,
+  batch_size = 32,
   validation_data = list(x_val, y_val),
+  callbacks = list(callback_early_stopping(monitor = "val_loss", patience = 20)),
   verbose = 0
 )
 
@@ -426,7 +435,9 @@ predictions_deepl <- model %>% predict(x_test)
 
 # Model comparison
 
-To compare the models we are using Mean Average Error and Mean Squared Error. 
+To compare the models we are using Mean Average Error and Mean Squared Error. These metrics show us how close the predictions are to the real scores. MSE punishes big mistakes more, whereas MAE punishes each error equally. 
+
+Besides this, we also look at the range of estimates that the models produce, and see if the predictions are similarly distributed as the real scores.
 
 ```{r}
 true_scores <- test_set$score
@@ -445,6 +456,7 @@ data.frame(
   mean_squared_error = c(mse_linear, mse_knn, mse_deepl)
 )
 ```
+Interestingly, it seems that both the KNN and the neural network underfits the data, since the linear regression has the least MAE and MSE. Possible reasons for this could be a mostly linear dataset, or that the dataset is relatively small (only 316 entries altogether). 
 
 ```{r}
 prediction_comparison <- 
@@ -463,6 +475,7 @@ ggplot(prediction_comparison, aes(x=Model, y=Scores, fill=Model)) +
   labs(y = "Scores", x="", title = "Predictions vs True Scores") +
   guides(fill="none")
 ```
+If we look at the distribution of the data, we can see that none of the models capture the range of scores that the students actually had and all of them estimate scores to be closer to the mean. The deep learning network has the widest range, but it does not outperform the linear regression in accuracy. 
 
 # Chosen model
 
@@ -475,6 +488,7 @@ Show which method is best and why. (approx. one paragraph) You are welcome to us
 # Team member contributions
 
 Write down what each team member contributed to the project.
-- Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
-- Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
-- Author Three: a, b, d
+<ul>
+<li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
+<li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
+<li>Author Three: a, b, d
