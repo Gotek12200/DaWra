@@ -272,7 +272,7 @@ A linear regression model is a parametric method that assumes a linear relations
 ## Linear regression
 ```{r}
 #Creating the model
-lin_regression <- lm(score ~ ., data = train_set)
+lin_regression <- lm(score ~ ., data = train_wo_outliers)
 
 #Check the performance of the model
 summary(lin_regression)
@@ -332,22 +332,6 @@ The KNN regression is a non-parametric model which makes predictions based on wh
 
 ```{r}
 #KNN regression without the outliers
-model_1 <- train.kknn(
-  score ~ .,
-  data = train_set,
-  kmax = 10,
-  distance = 2,
-  kernel = "optimal"
-)
-
-model_1
-
-plot(model_1)
-
-predictions_knn <- predict(model_1, newdata = test_set)
-
-
-#KNN regression with the outliers
 model_2 <- train.kknn(
   score ~ .,
   data = train_wo_outliers,
@@ -362,10 +346,6 @@ plot(model_2)
 
 
 pred_wo_outliers <- predict(model_2, newdata = test)
-
-#Check the impact of outliers
-differences <- predictions_knn - pred_wo_outliers
-summary(differences)
 ```
 
 ## Deep learning model
