@@ -265,7 +265,7 @@ val_deep <- train_one_hot[val_ids, ]
 ```
 # Model description
 
-### Linear regression
+## Linear regression
 ```{r}
 #Creating the model
 lin_regression <- lm(score ~ ., data = train_linear)
@@ -282,7 +282,72 @@ lin_reg_mse <- mean((true_score- predictions)^2)
 
 print(lin_reg_mse)
 ```
-### KNN-regression
+The fitted model explains approximately 35.5% of the variance in student scores, indicating that at least one of the predictors contributes to explaining variation in the dependent variable.
+### Assumption Checking
+
+1. Residuals vs Fitted
+
+The residuals appear randomly scattered around zero with no clear pattern, this means that the linearity assumption is met. The slight curvature in the red trend line is minor and does not indicate strong nonlinearity.
+
+2. Q–Q Plot
+
+The residuals fall closely along the 45° reference line, implying that the normality assumption of residuals is reasonably satisfied. A few mild deviations at the tails are visible but not severe enough to threaten inference validity.
+
+3. Scale–Location Plot
+
+The spread of residuals is roughly constant across fitted values, supporting the homoscedasticity assumption (equal variance of errors).There is no strong funnel shape,
+
+4. Residuals vs Leverage
+
+Most data points fall within the Cook’s distance boundaries, suggesting no highly influential observations that unduly affect model estimates. A few points  show slightly higher leverage but remain within acceptable limits.
+
+### Checking for Multicollinearity
+
+To assess multicollinearity among the independent variables, the Variance Inflation Factor (VIF) was computed using the `car::vif()` function. The Generalized VIF (GVIF) and its adjusted value `GVIF^(1/(2*Df))` were examined to identify any predictors exhibiting high multicollinearity.
+
+| Threshold | Interpretation |
+|------------|----------------|
+| < 2        | Low multicollinearity (ideal) |
+| 2–5        | Moderate multicollinearity (acceptable) |
+| > 5        | High multicollinearity (problematic) |
+
+```{r}
+# Check VIF values
+vif(lin_regression)
+```
+
+```{r}
+vif_values <- vif(lin_regression)
+high_vif <- vif_values[vif_values[, "GVIF"] > 5, ]
+high_vif
+```
+
+### Rebuilding the model
+```{r}
+vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
+
+train_data_vif <- train_linear[, !(names(train_linear) %in% vars_to_remove)]
+test_data_vif <- test_linear[, !(names(test_linear) %in% vars_to_remove)]
+
+#Fit linear regression without those variables
+lin_regression_vif <- lm(score ~ ., data = train_data_vif)
+
+#Summary of the model
+summary(lin_regression_vif)
+plot(lin_regression_vif)
+
+#Predict on test data
+predictions_vif <- predict(lin_regression_vif, newdata = test_data_vif)
+true_score <- test_data_vif$score
+
+#Compute Mean Squared Error
+lin_reg_mse_vif <- mean((true_score - predictions_vif)^2)
+
+cat("Linear Regression MSE (after removing high-VIF variables):",
+round(lin_reg_mse_vif, 4), "\n")
+```
+
+## KNN-regression
 The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
 
 ```{r}
@@ -323,7 +388,7 @@ differences <- pred - pred_wo_outliers
 summary(differences)
 ```
 
-### Deep learning model
+## Deep learning model
 ```{r}
 # defining input and output
 x_train <- train_deep %>% select(-score) %>% as.matrix()
@@ -363,7 +428,6 @@ model %>% evaluate(x_test, y_test, verbose = 1)
 ```
 
 
-
 # Model comparison
 
 Describe how you compare the methods and why. (approx. two or three paragraphs)
@@ -381,51 +445,7 @@ data.frame(
   notes       = c("Some note", "another note")
 )
 ```
-# Checking for Multicollinearity
 
-To assess multicollinearity among the independent variables, the Variance Inflation Factor (VIF) was computed using the `car::vif()` function. The Generalized VIF (GVIF) and its adjusted value `GVIF^(1/(2*Df))` were examined to identify any predictors exhibiting high multicollinearity.
-
-| Threshold | Interpretation |
-|------------|----------------|
-| < 2        | Low multicollinearity (ideal) |
-| 2–5        | Moderate multicollinearity (acceptable) |
-| > 5        | High multicollinearity (problematic) |
-
-```{r}
-# Check VIF values
-vif(lin_regression)
-```
-
-```{r}
-vif_values <- vif(lin_regression)
-high_vif <- vif_values[vif_values[, "GVIF"] > 5, ]
-high_vif
-```
-
-# Rebuilding the model
-```{r}
-vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
-
-train_data_vif <- train_linear[, !(names(train_linear) %in% vars_to_remove)]
-test_data_vif <- test_linear[, !(names(test_linear) %in% vars_to_remove)]
-
-#Fit linear regression without those variables
-lin_regression_vif <- lm(score ~ ., data = train_data_vif)
-
-#Summary of the model
-summary(lin_regression_vif)
-plot(lin_regression_vif)
-
-#Predict on test data
-predictions_vif <- predict(lin_regression_vif, newdata = test_data_vif)
-true_score <- test_data_vif$score
-
-#Compute Mean Squared Error
-lin_reg_mse_vif <- mean((true_score - predictions_vif)^2)
-
-cat("Linear Regression MSE (after removing high-VIF variables):",
-round(lin_reg_mse_vif, 4), "\n")
-```
 
 
 # Team member contributions
