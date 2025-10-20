@@ -222,7 +222,7 @@ Deep learning can only handle numerical values, so we need to create a one-hot e
 nominal_vars <- c("Mjob","Fjob","reason","guardian")
 
 train_one_hot <- dummy_cols(
-  train_norm,
+  train_wo_outliers,
   select_columns = nominal_vars,
   remove_selected_columns = TRUE
 )
@@ -244,8 +244,8 @@ We need to split the train dataset to a sample used for training, a sample used 
 set.seed(123)
 
 #first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
-train_split <- sample.split(train$score, SplitRatio = 0.8)
-val_split <- sample.split(train$score[!train_split], SplitRatio = 0.5)
+train_split <- sample.split(train_wo_outliers$score, SplitRatio = 0.8)
+val_split <- sample.split(train_wo_outliers$score[!train_split], SplitRatio = 0.5)
 
 # save the row indices that are part of the set
 train_ids <- which(train_split)
@@ -254,9 +254,9 @@ val_ids <- temp_ids[val_split]
 test_ids <- temp_ids[!val_split]
 
 # dataset for k-nearest neighbors and linear regression (normalized)
-train_set <- train_norm[train_ids, ]
-test_set <- train_norm[test_ids, ]
-val_set <- train_norm[val_ids, ]
+train_set <- train_wo_outliers[train_ids, ]
+test_set <- train_wo_outliers[test_ids, ]
+val_set <- train_wo_outliers[val_ids, ]
 
 # dataset for deep learning (normalized & one-hot encoded)
 train_deep <- train_one_hot[train_ids, ]
@@ -352,8 +352,8 @@ round(lin_reg_mse_vif, 4), "\n")
 The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
 
 ```{r}
-#KNN regression without the outliers
-model_1 <- train.kknn(
+#KNN regression
+model_knn <- train.kknn(
   score ~ .,
   data = train_set,
   kmax = 10,
@@ -361,32 +361,12 @@ model_1 <- train.kknn(
   kernel = "optimal"
 )
 
-model_1
+# checking model parameters
+model_knn
+plot(model_knn)
 
-plot(model_1)
-
-predictions_knn <- predict(model_1, newdata = test_set)
-
-
-#KNN regression with the outliers
-model_2 <- train.kknn(
-  score ~ .,
-  data = train_wo_outliers,
-  kmax = 10,
-  distance = 2,
-  kernel = "optimal"
-)
-
-model_2
-
-plot(model_2)
-
-
-pred_wo_outliers <- predict(model_2, newdata = test)
-
-#Check the impact of outliers
-differences <- predictions_knn - pred_wo_outliers
-summary(differences)
+# creating predictions
+predictions_knn <- predict(model_knn, newdata = test_set)
 ```
 
 ## Deep learning model
@@ -483,12 +463,7 @@ ggplot(prediction_comparison, aes(x=Model, y=Scores, fill=Model)) +
 If we look at the distribution of the data, we can see that none of the models capture the range of scores that the students actually had and all of them estimate scores to be closer to the mean. The deep learning network has the widest range, but it does not outperform the linear regression in accuracy. 
 
 # Chosen model
-
-Show which method is best and why. (approx. one paragraph) You are welcome to use tables and plots!
-
-
-
-
+We chose linear regression as our model, since that resulted in the lower error on the dataset. It is easily interpretable unlike the deep learning model and much more computionally efficient.
 
 # Team member contributions
 
