@@ -40,16 +40,13 @@ test <- readRDS("test.rds")
 
 # Data description
 
-Describe the data and use a visualization to support your story. (approx. one or two paragraphs)
-The dataset represents the characteristics of the secondary school students and additional information about their family background with their specific profile information, such as age, education of male or female partent etc..; It has a selection of categorical (factor) (such as school, sex, adress..) and continuous (numeric) quantitative variables such as age, male education, internet etc, the mix of which is well suited for regression or classification tasks, in our case useful framework(regression for continuous variable score) to predict performance of students. The split between males and females is relatively equal (Female: 173, Male: 143). The score range volatiles from -2.71 to 2.23, which shows that the variable is standardized, implying the formula (raw_score-mean/sd) was implied for better interpretation of students' results. Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, shocasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm. 
-Since we make prediction on score, in test set we do not include this variable and train the dataset based on the other characteristics to then try to predict for those test observations. 
+The dataset represents the characteristics of the secondary school students and additional information about their family background with their specific profile information, such as age, education of male or female partent etc.
 
-```{r}
-# Preview the data
-glimpse(train)
-summary(train)
+It has a selection of categorical (factor) (such as school, sex, adress..) and continuous (numeric) quantitative variables such as age, male education, internet etc, the mix of which is well suited for regression or classification tasks. 
 
-```
+The split between males and females is relatively equal (Female: 173, Male: 143). The score range volatiles from -2.71 to 2.23, which shows that the variable is standardized, implying the formula (raw_score-mean/sd) was implied for better interpretation of students' results. 
+
+Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, showcasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm. 
 
 ```{r}
 ggplot(train, aes(x = score)) +
@@ -65,8 +62,14 @@ train %>%
 
 ```
 
-```{r}
+Since we make prediction on score, in test set we do not include this variable and train the dataset based on the other characteristics to then try to predict for those test observations. 
 
+```{r}
+# Preview the data
+glimpse(train)
+```
+
+```{r}
 # Compute correlation matrix for numeric variables
 num_vars <- train %>% select(where(is.numeric)) %>% select(-score)
 cor_mat <- cor(num_vars, use = "pairwise.complete.obs")
@@ -87,26 +90,31 @@ head(correlations, 10)
 # Data transformation and pre-processing
 
 ### Checking for & handling missing values
+First, we check the dataset for missing values that could affect the result.
 ```{r}
 train %>% summarise(across(everything(), ~sum(is.na(.)))) %>%
   pivot_longer(everything(), names_to = "variable", values_to = "missing_count") %>%
   arrange(desc(missing_count))
 ```
-
-```{r}
-train_clean <- train %>%
-  mutate(across(where(is.numeric), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
-```
+Fortunately, based on the output, we have no missing values in the dataset.
 
 ### Converting categorical variables to factors
+Next, we need to convert categorical variables which are currently stored as text to factors to use for training our models.
 ```{r}
-train_clean <- train_clean %>%
+train_clean <- train %>%
   mutate(across(where(is.character), as.factor))
 ```
 
 ### Converting yes/no variables to boolean values
+Similarly, yes or no values will be converted to 0 or 1.
+```{r}
+train_clean <- train_clean %>% 
+  mutate(across(c("schoolsup","famsup","paid","activities","nursery","higher", "internet","romantic"), ~ ifelse(. == "yes", 1, 0)))
+```
 
 ### Normalizing numerical values
+For k-nearest neighbors and neural nets it is essential to normalize numerical values to the same scale, otherwise variables with a different range of values would have a much bigger effect on the model than others. 
+
 
 ### Check for outliers with the statistical approach
 ```{r}
@@ -128,8 +136,11 @@ boxplot(train_clean[, numeric_cols],
 
 numeric_cols
 ```
-# Train test split
+
+### Train test split
+We need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
 ```{r}
+# set seed for reproducibility
 set.seed(123)
 
 #first split the full data set in a 80/20 test train set
@@ -163,7 +174,7 @@ lin_reg_mse <- mean((true_score- predictions)^2)
 print(lin_reg_mse)
 ```
 ### KNN-regression
-##The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
+The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighbours considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
 
 ```{r}
 #KNN regression without the outliers
