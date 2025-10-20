@@ -17,7 +17,7 @@ execute:
   message: false
   echo: true
 ---
-
+# Loading Library
 ```{r}
 #| label: R packages
 #| echo: false
@@ -38,7 +38,7 @@ library(kknn)
 library(keras3)
 library(tensorflow)
 ```
-
+# Loading in the Data
 ```{r}
 #| label: data loading
 #| echo: false
@@ -55,7 +55,9 @@ It has a selection of categorical (factor) (such as school, sex, adress..) and c
 
 The split between males and females is relatively equal (Female: 173, Male: 143). The score range volatiles from -2.71 to 2.23, which shows that the variable is standardized, implying the formula (raw_score-mean/sd) was implied for better interpretation of students' results. 
 
-Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, showcasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm. 
+Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, showcasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm.
+
+##Score distribution
 
 ```{r}
 ggplot(train, aes(x = score)) +
@@ -77,7 +79,7 @@ Since we make prediction on score, in test set we do not include this variable a
 # Preview the data
 glimpse(train)
 ```
-
+## Correlation table
 ```{r}
 # Compute correlation matrix for numeric variables
 num_vars <- train %>% select(where(is.numeric)) %>% select(-score)
@@ -96,6 +98,7 @@ correlations <- train %>%
 
 head(correlations, 10)
 ```
+There are some predictors that have a higher correlation, later in the report we will check the Multicollinearity to see if they influence the model/
 # Data transformation and pre-processing
 
 ### Checking for & handling missing values
@@ -271,7 +274,7 @@ A linear regression model is a parametric method that assumes a linear relations
 ## Linear regression
 ```{r}
 #Creating the model
-lin_regression <- lm(score ~ ., data = train_set)
+lin_regression <- lm(score ~ ., data = train_wo_outliers)
 
 #Check the performance of the model
 summary(lin_regression)
@@ -302,7 +305,7 @@ The spread of residuals is roughly constant across fitted values, supporting the
 
 4. Residuals vs Leverage
 
-Most data points fall within the Cook’s distance boundaries, suggesting no highly influential observations that unduly affect model estimates. A few points  show slightly higher leverage but remain within acceptable limits.
+Most data points fall within the Cook’s distance boundaries, meaning no highly influential observations that  affect model estimates. A few points  show slightly higher leverage but remain within acceptable limits.
 
 ### Checking for Multicollinearity
 
@@ -324,31 +327,7 @@ vif_values <- vif(lin_regression)
 high_vif <- vif_values[vif_values[, "GVIF"] > 5, ]
 high_vif
 ```
-
-### Rebuilding the model
-```{r}
-vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
-
-train_data_vif <- train_set[, !(names(train_set) %in% vars_to_remove)]
-test_data_vif <- test_set[, !(names(test_set) %in% vars_to_remove)]
-
-#Fit linear regression without those variables
-lin_regression_vif <- lm(score ~ ., data = train_data_vif)
-
-#Summary of the model
-summary(lin_regression_vif)
-plot(lin_regression_vif)
-
-#Predict on test data
-predictions_vif <- predict(lin_regression_vif, newdata = test_data_vif)
-true_score <- test_data_vif$score
-
-#Compute Mean Squared Error
-lin_reg_mse_vif <- mean((true_score - predictions_vif)^2)
-
-cat("Linear Regression MSE (after removing high-VIF variables):",
-round(lin_reg_mse_vif, 4), "\n")
-```
+There are no highly influential points, all fall under the 5 threshold, so there is no need to remove a predictor and to rebuild the model with new data
 
 ## KNN-regression
 The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
@@ -550,6 +529,6 @@ Write down what each team member contributed to the project.
 <ul>
 <li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 <li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
-<li>Osaro Orebor: 
+<li>Osaro Orebor: Preprocessing step and handeling the assumptions. I made the layout look nice 
 <li>Niels Wagenaar: trained linear regression and wrote the description
 
