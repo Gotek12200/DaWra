@@ -492,4 +492,4 @@ Write down what each team member contributed to the project.
 <ul>
 <li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 <li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
-<li>Author Three: a, b, d
+<li>Niels Wagenaar: trained linear regression and wrote the description
