@@ -264,6 +264,7 @@ test_deep <- train_one_hot[test_ids, ]
 val_deep <- train_one_hot[val_ids, ]
 ```
 # Model description
+A linear regression model is a parametric method that assumes a linear relationship between the feature variables and the target variable; "score". This means that it estimates the impact of each variable on the score by giving all variables a coefficient, that determines if a variable impacts the score and how it impacts it. After we train the model on the train data, these coefficients are then used to make predictions on the test dataset.
 
 ## Linear regression
 ```{r}
@@ -496,3 +497,5 @@ Write down what each team member contributed to the project.
 <li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 <li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
 <li>Osaro Orebor: 
+<li>Niels Wagenaar: trained linear regression and wrote the description
+
