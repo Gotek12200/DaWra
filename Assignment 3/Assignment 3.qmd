@@ -270,11 +270,10 @@ summary(lin_regression)
 plot(lin_regression)
 
 #calculate the MSE for the linear model
-predictions <- predict(lin_regression, newdata = test_set)
+predictions_linear <- predict(lin_regression, newdata = test_set)
 true_score <- test_set$score
 
-lin_reg_mse <- mean((true_score- predictions)^2)
-
+lin_reg_mse <- mean((true_score- predictions_linear)^2)
 print(lin_reg_mse)
 ```
 The fitted model explains approximately 35.5% of the variance in student scores, indicating that at least one of the predictors contributes to explaining variation in the dependent variable.
@@ -321,8 +320,8 @@ high_vif
 ```{r}
 vars_to_remove <- c( "Mjob", "Fjob", "reason", "guardian")
 
-train_data_vif <- train_linear[, !(names(train_linear) %in% vars_to_remove)]
-test_data_vif <- test_linear[, !(names(test_linear) %in% vars_to_remove)]
+train_data_vif <- train_set[, !(names(train_set) %in% vars_to_remove)]
+test_data_vif <- test_set[, !(names(test_set) %in% vars_to_remove)]
 
 #Fit linear regression without those variables
 lin_regression_vif <- lm(score ~ ., data = train_data_vif)
@@ -359,7 +358,7 @@ model_1
 
 plot(model_1)
 
-pred <- predict(model_1, newdata = test_set)
+predictions_knn <- predict(model_1, newdata = test_set)
 
 
 #KNN regression with the outliers
@@ -379,11 +378,12 @@ plot(model_2)
 pred_wo_outliers <- predict(model_2, newdata = test)
 
 #Check the impact of outliers
-differences <- pred - pred_wo_outliers
+differences <- predictions_knn - pred_wo_outliers
 summary(differences)
 ```
 
 ## Deep learning model
+For deep learning we use 2 hidden layers with 32 and 16 nodes, with ReLu activations. There is also a dropout of 0.2 between layers. Since the training data has relatively few entries, we only do a few epochs to avoid overfitting. For the training the ADAM optimizer is used and the loss function is the mean-squared error.
 ```{r}
 # defining input and output
 x_train <- train_deep %>% select(-score) %>% as.matrix()
@@ -420,31 +420,54 @@ history <- model %>% fit(
 
 # evaluation
 model %>% evaluate(x_test, y_test, verbose = 1)
-predictions <- model %>% predict(x_test)
-
-df <- data.frame(index = 1:length(y_test), actual=y_test, predicted=as.vector(predictions))
-
-ggplot(df, aes(x=index)) + geom_point(aes(y=actual, color="Actual")) + geom_point((aes(y = predicted, color = "Predicted")))
+predictions_deepl <- model %>% predict(x_test)
 ```
 
 
 # Model comparison
 
-Describe how you compare the methods and why. (approx. two or three paragraphs)
+To compare the models we are using Mean Average Error and Mean Squared Error. 
+
+```{r}
+true_scores <- test_set$score
+
+mae_linear <- mean(abs(true_scores - predictions_linear))
+mae_knn <- mean(abs(true_scores - predictions_knn))
+mae_deepl <- mean(abs(true_scores - predictions_deepl))
+
+mse_linear <- mean((true_scores - predictions_linear)^2)
+mse_knn <- mean((true_scores - predictions_knn)^2)
+mse_deepl <- mean((true_scores - predictions_deepl)^2)
+
+data.frame(
+  model = c("Linear Regression", "K-Nearest Neighbours", "Deep Learning"),
+  mean_absolute_error = c(mae_linear, mae_knn, mae_deepl),
+  mean_squared_error = c(mse_linear, mse_knn, mse_deepl)
+)
+```
+
+```{r}
+prediction_comparison <- 
+  tibble(
+    "True Scores" = true_scores, 
+    "Linear Regression" = predictions_linear, 
+    "KNN" = predictions_knn, 
+    "Deep Learning" = predictions_deepl
+    ) %>% 
+  pivot_longer(cols=everything(), names_to = "Model", values_to = "Scores") %>%
+  mutate(Model = factor(Model, levels=c("True Scores", "Linear Regression", "KNN", "Deep Learning")))
+
+ggplot(prediction_comparison, aes(x=Model, y=Scores, fill=Model)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(y = "Scores", x="", title = "Predictions vs True Scores") +
+  guides(fill="none")
+```
 
 # Chosen model
 
 Show which method is best and why. (approx. one paragraph) You are welcome to use tables and plots!
 
-```{r}
-#| label: table example
-data.frame(
-  model       = c("Cool model 1", "Cool model 2"),
-  performance = c(1.2, 1.8),
-  other       = c(0.5, 0.3),
-  notes       = c("Some note", "another note")
-)
-```
 
 
 
@@ -453,5 +476,5 @@ data.frame(
 
 Write down what each team member contributed to the project.
 - Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
-- Author Two: b, c, d
+- Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
 - Author Three: a, b, d
