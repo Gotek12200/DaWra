@@ -29,6 +29,10 @@ library(text2vec)
 library(wordcloud)
 library(magrittr)
 library(tm)
+library(dplyr)
+library(tidyverse)
+library(tidytext)
+library(stringr)
 
 # additional packages here
 ```
@@ -41,7 +45,17 @@ data("movie_review")
 # your R code to load the data here
 ```
 
+```{r}
+glimpse(movie_review) #take a quick glance at data
+summary(movie_review) 
+sapply(movie_review, class) #identify classes of dataset variables for sentiment analysis
+table(movie_review$sentiment) #see the distribution of negative and positive reviews
+```
+
 # Data description
+Based on the dataset "movie_review" embedded in text2vec package, we see the selection of positive and negative reviews of movie viewers, relatively evenly distributed in the dataset (2483 negative and 2517 positive reviews) denoted with score 1 if the IMDB rating was >= 7 or 0 if rating is <5 accordingly.
+
+
 
 Describe the data and use a visualization to support your story. (approx. one or two paragraphs)
 
@@ -60,7 +74,31 @@ movie_review %$% wordcloud(review,
 
 # Text pre-processing
 
-Describe text pre-processing steps you have used (approx. one or two paragraphs)
+For better analysis we will further on clean the text from review column based on selected pre-processing methods.
+But first, we will change sentiment column to factor class:
+
+```{r}
+movie_review$sentiment <- as.factor(movie_review$sentiment)
+sapply(movie_review, class) #checking the factor change
+```
+Next, we will remove empty rows with no text or duplicates, which leaves us with 4996 observations.
+
+```{r}
+movie_review <- movie_review %>% 
+  filter(!is.na(review)) %>%
+  distinct(review, .keep_all = T)
+```
+Now, we will lowercase all the letters in the texts and remove punctuation:
+```{r}
+clean_movie_review <- movie_review %>%
+  mutate(review = review %>%
+      str_to_lower() %>% # induce lowercase
+  str_replace_all("[[:punct:]]", " ") %>% #remove punctuation
+  str_squish()) #remove extra space
+```
+
+Next, we will tokenise review column:
+
 
 # Text representaion
 
