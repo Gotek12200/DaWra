@@ -57,7 +57,7 @@ Based on the dataset "movie_review" embedded in text2vec package, we see the sel
 
 
 
-Describe the data and use a visualization to support your story. (approx. one or two paragraphs)
+Describe the data and use a visualization to support your story. (approx. one or two paragraphs
 
 ```{r}
 #| label: eda visualization
