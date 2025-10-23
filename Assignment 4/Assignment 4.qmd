@@ -33,6 +33,7 @@ library(dplyr)
 library(tidyverse)
 library(tidytext)
 library(stringr)
+library(stopwords)
 
 # additional packages here
 ```
@@ -42,7 +43,7 @@ library(stringr)
 
 data("movie_review")
 
-# your R code to load the data here
+# your R code to load the data her
 ```
 
 ```{r}
@@ -97,8 +98,91 @@ clean_movie_review <- movie_review %>%
   str_squish()) #remove extra space
 ```
 
-Next, we will tokenise review column:
+Next, we will tokenize review column:
 
+```{r}
+clean_movie_review <- clean_movie_review |> 
+  unnest_tokens(word, review)
+```
+
+We then received 1229424 observations from 4996 reviews; now let's see the most common words from our reviews (we use ggplot function):
+
+```{r}
+clean_movie_review |> 
+  # count the frequency of each word
+  count(word) |> 
+  # arrange the words by its frequency in descending order
+  arrange(desc(n)) |> 
+  # select the top 30 most frequent words
+  head(30) |> 
+  # (reorder words by their frequencies)
+  ggplot(aes(x = n, y = reorder(word, n))) + 
+  geom_col(fill="lightblue") +
+  labs(x = "frequency", y="words") + 
+  theme_classic()
+```
+We see that many of the top words can be considered "stop words" since they bring no significant importance to review meanings, let's remove stop words(except for not because then we can imply useful combinations of words to identify negative or positive meaning:
+
+```{r}
+stop_words <- c(
+  "the", "and", "a", "of", "to", "is", "it", "in", "this", "that", "was",
+  "as", "with", "for", "movie", "but", "film", "you", "he", "his", "are", "have", "be", "one"
+)
+stop_words <- tibble(word=stop_words)
+  clean_movie <- clean_movie_review %>%
+    anti_join(stop_words, by = "word")
+```
+Eventually, we are left with 843586 observations. Let's see our top words now:
+```{r}
+clean_movie |> 
+  # count the frequency of each word
+  count(word) |> 
+  # arrange the words by its frequency in descending order
+  arrange(desc(n)) |> 
+  # select the top 30 most frequent words
+  head(30) |> 
+  # (reorder words by their frequencies)
+  ggplot(aes(x = n, y = reorder(word, n))) + 
+  geom_col(fill="lightblue") +
+  labs(x = "frequency", y="words") + 
+  theme_classic()
+```
+There are still some stop words left, and removing them all manually might be time-consuming. Let's instead use the dataset smart_stopwords from library(stopwords) and modify it with those words that we want to use in the analysis(for example, leaving negative particles to see the negative review sensitivity).
+
+```{r}
+smart_stopwords <- stopwords(source = "smart")
+stop_words <- tibble(word=smart_stopwords)
+df_stopwords <- stop_words %>%
+  filter(!word %in% c("neither", "never", "no", "nobody", "non", "none", "not", "nothing", "nowhere", "awfully", "best", "better", "cannot", "least", "less", "like", "little", "serious", "thanks", "welcome", "want", "willing", "will", wish", "without"))
+#removing stop words
+  clean_movie <- clean_movie_review %>%
+    anti_join(stop_words, by = "word")
+```
+```{r}
+smart_stopwords <- stopwords(source = "smart")
+stop_words <- tibble(word=smart_stopwords)
+df_stopwords <-stop_words |>
+  filter(!word %in% c("neither", "never", "no", "nobody", "non", "none", "not", "nothing", "nowhere", "awfully", "best", "better", "cannot", "least", "less", "like", "little", "serious", "thanks", "welcome", "want", "willing", "will", "wish", "without"))
+#removing stop words
+  clean_movie <- clean_movie_review %>%
+    anti_join(stop_words, by = "word")
+  
+```
+In the end, we received 521346 observations to work with. 
+```{r}
+clean_movie |> 
+  # count the frequency of each word
+  count(word) |> 
+  # arrange the words by its frequency in descending order
+  arrange(desc(n)) |> 
+  # select the top 30 most frequent words
+  head(30) |> 
+  # (reorder words by their frequencies)
+  ggplot(aes(x = n, y = reorder(word, n))) + 
+  geom_col(fill="lightblue") +
+  labs(x = "frequency", y="words") + 
+  theme_classic()
+```
 
 # Text representaion
 
