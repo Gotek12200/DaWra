@@ -1,10 +1,23 @@
-:::{.callout-note}
-## Instruction
-
-This is a quarto file. If you open its [source](report_template.qmd) in RStudio, you will get all the features of this interactive notebook-style document. If you want to know more about how to use this file to generate a .html document to hand in, look at [the getting started guide](https://quarto.org/docs/get-started/hello/rstudio.html).
-
-(Delete this callout box before handing in your assignment.)
-:::
+---
+title: "Text clustering"
+author: 
+  - Osaro Orebor 1168827
+  - Máté Csikós-Nagy 4395565
+  - Fani Profiti 1240390
+  - Yara Yachnyk 4913329
+  - Niels Wagenaar 3133998
+date: last-modified
+format:
+  html:
+    toc: true
+    self-contained: true
+    code-fold: true
+    df-print: kable
+execute:
+  warning: false
+  message: false
+  echo: true
+---
 
 ```{r}
 #| label: R packages
@@ -15,6 +28,7 @@ This is a quarto file. If you open its [source](report_template.qmd) in RStudio,
 library(text2vec)
 library(wordcloud)
 library(magrittr)
+library(tm)
 
 # additional packages here
 ```
@@ -36,7 +50,6 @@ Describe the data and use a visualization to support your story. (approx. one or
 #| warning: false
 
 # your R code to generate the plot here
-
 movie_review %$% wordcloud(review, 
                            min.freq = 10, 
                            max.words = 50, 
