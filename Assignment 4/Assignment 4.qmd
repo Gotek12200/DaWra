@@ -43,7 +43,7 @@ data("movie_review")
 
 # Data description
 
-Describe the data and use a visualization to support your story. (approx. one or two paragraphs)
+Describe the data and use a visualization to support your story. (approx. one or two paragraphs
 
 ```{r}
 #| label: eda visualization
