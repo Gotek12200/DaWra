@@ -199,10 +199,23 @@ clean_train |>
 Document_term_matrix:
 
 ```{r}
-vectorizer = vocab_vectorizer(clean_movie)
-t1 = Sys.time()
+# make it a list (iterator)
+clean_train_ls <- list(clean_train$word)
+
+# create index-tokens
+it_train <- itoken(clean_train_ls, progressbar = FALSE)
+
+# collecting unique terms
+train_vocab <- create_vocabulary(it_train)
+
+# filtering infrequent terms
+train_vocab <- prune_vocabulary(train_vocab, term_count_min=5)
+
+vectorizer = vocab_vectorizer(train_vocab)
+
+# creating document term matrix
 dtm_train = create_dtm(it_train, vectorizer)
-print(difftime(Sys.time(), t1, units = 'sec'))
+
 ```
 
 # Text representaion
