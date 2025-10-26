@@ -1,0 +1,532 @@
+---
+title: "Supervised learning competition"
+author: 
+  - Osaro Orebor 1168827
+  - Máté Csikós-Nagy 4395565
+  - Fani Profiti 1240390
+  - Yara Yachnyk 4913329
+  - Niels Wagenaar 3133998
+format:
+  html:
+    toc: true
+    self-contained: true
+    code-fold: true
+    df-print: kable
+execute:
+  warning: false
+  message: false
+  echo: true
+---
+# Loading Library
+```{r}
+#| label: R packages
+#| warning: false
+#| message: false
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(corrplot)
+library(GGally)
+library(janitor)
+library(caTools)
+library(car)
+library(fastDummies)
+library(kknn)
+library(keras3)
+library(tensorflow)
+```
+# Loading in the Data
+```{r}
+#| label: data loading
+train <- readRDS("train.rds")
+test <- readRDS("test.rds")
+```
+
+# Data description
+
+The dataset represents the characteristics of the secondary school students and additional information about their family background with their specific profile information, such as age, education of male or female partent etc.
+
+It has a selection of categorical (factor) (such as school, sex, adress..) and continuous (numeric) quantitative variables such as age, as well as boolean yes or no variables. 
+
+The split between males and females is relatively equal (Female: 173, Male: 143). The score range volatiles from -2.71 to 2.23, which shows that the variable is standardized, implying the formula (raw_score-mean/sd) was implied for better interpretation of students' results. 
+
+Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, showcasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm.
+
+## Score distribution
+
+```{r}
+ggplot(train, aes(x = score)) +
+  geom_histogram(fill = "skyblue", color = "white", bins = 20) +
+  theme_minimal() +
+  labs(title = "Distribution of Student Scores",
+       x = "Score", y = "Count")
+
+# Summary statistics for numerical variables
+train %>% 
+  select(where(is.numeric)) %>% 
+  summary()
+
+```
+
+Since we make prediction on score, in test set we do not include this variable and train the dataset based on the other characteristics to then try to predict for those test observations. 
+
+```{r}
+# Preview the data
+glimpse(train)
+```
+## Correlation table
+```{r}
+# Compute correlation matrix for numeric variables
+num_vars <- train %>% select(where(is.numeric)) %>% select(-score)
+cor_mat <- cor(num_vars, use = "pairwise.complete.obs")
+
+corrplot(cor_mat, method = "color", type = "upper", tl.cex = 0.8)
+
+# Correlation of each numeric variable with score
+correlations <- train %>%
+  select(where(is.numeric)) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  as.data.frame() %>%
+  rownames_to_column("Variable") %>%
+  select(Variable, score) %>%
+  arrange(desc(abs(score)))
+
+head(correlations, 10)
+```
+There are some predictors that have a higher correlation, later in the report we will check the Multicollinearity to see if they influence the model/
+
+# Data transformation and pre-processing
+
+### Checking for & handling missing values
+First, we check the dataset for missing values that could affect the result.
+```{r}
+train %>% summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_count") %>%
+  arrange(desc(missing_count))
+```
+Fortunately, based on the output, we have no missing values in the dataset.
+
+### Converting categorical variables to factors
+Next, we need to convert categorical variables which are currently stored as text to factors to use for training our models.
+```{r}
+train_clean <- train %>%
+  mutate(across(where(is.character), as.factor))
+```
+
+### Converting yes/no variables to boolean values
+Similarly, yes or no values will be converted to boolean values.
+```{r}
+# Identify yes/no columns automatically and assign them boolean values
+train_clean <- train_clean %>%
+  mutate(across(
+    where(~ (is.character(.) || is.factor(.)) && all(tolower(unique(.)) %in% c("yes", "no"))),
+    ~ tolower(as.character(.)) == "yes"
+  ))
+```
+
+### Normalizing numerical values
+For k-nearest neighbors and neural nets it is essential to normalize numerical values to the same scale, otherwise variables with a different range of values would have a much bigger effect on the model than others. 
+
+The numerical variables which are a score from 1-5 (or 1-4) are not continous are scaled using min-max scaling (because we can't assume normal distribution there).
+```{r}
+# scaling 1-5 scores (5 will be 1 and 1 will be scaled to 0)
+train_norm <- train_clean %>% mutate(across(c("famrel","freetime","goout","Dalc","Walc", "health"), ~ (. - 1) / 4))
+
+# scaling 1-4 scores (4 will be 1 and 1 will be scaled to 0)
+train_norm <- train_norm %>% mutate(across(c(Medu, Fedu), ~ . / 4))
+```
+
+Some numerical variables are encoding bins (like `studytime` or `traveltime`). In this case, to keep the distances more preserved, we assign the mid-point of the bins and normalize those (for instance the value 2 in studytime means 2 to 5 hours of studying - in this case we replace 2 with 3.5 and normalize that).
+```{r}
+# scaling bin-type variables to their midpoints (traveltime and studytime)
+
+# travel time in minutes with approximate midpoints
+train_norm <- train_norm %>%
+  mutate(traveltime = case_when(
+    traveltime == 1 ~ 7.5,
+    traveltime == 2 ~ 22.5,
+    traveltime == 3 ~ 45,
+    traveltime == 4 ~ 75
+  )) 
+
+# studytime in hours with approximate midpoints
+train_norm <- train_norm %>%
+  mutate(studytime = case_when(
+    studytime == 1 ~ 1,
+    studytime == 2 ~ 3.5,
+    studytime == 3 ~ 7.5,
+    studytime == 4 ~ 12
+  ))
+
+train_norm <- train_norm %>% 
+  mutate(
+    traveltime = (traveltime - min(traveltime)) / (max(traveltime) - min(traveltime)),
+    studytime = (studytime - min(studytime)) / (max(studytime) - min(studytime))
+    )
+```
+
+The continous variables like `failures`, `age` and `absences` are normalized using z-score normalization.
+```{r}
+# scaling using normal distribution
+train_norm <- train_norm %>% mutate(across(c(failures, age, absences), ~ as.numeric(scale(.))))
+```
+
+### Check for outliers with the statistical approach
+Next we check for outliers, to avoid the influence of some irregular datapoint on the models. We detect the outliers for continous variables by checking whether they are 3 standard deviations from the mean.The variables we check here are `age`, `failures` and `absences`.
+```{r}
+# detecting and counting outliers in continous numerical columns
+z_scores <- train_norm[, c("age","absences","failures")]
+outliers <- as.data.frame(abs(z_scores) > 3)
+colSums(outliers)
+```
+As we can see, there are some outliers in the dataset. Now we can remove them and plot how the distribution changed using boxplots.
+```{r}
+#| warning: false
+
+# replacing outliers with NA
+train_wo_outliers <- train_norm %>% mutate(across(c("age", "failures", "absences"), ~ ifelse(outliers[[cur_column()]], NA, .)))
+
+# creating data plot for plotting
+before_after <- data.frame(
+    age_before = z_scores$age,
+    age_after = train_wo_outliers$age,
+    absences_before = z_scores$absences,
+    absences_after = train_wo_outliers$absences,
+    failures_before = z_scores$failures,
+    failures_after = train_wo_outliers$failures
+)
+
+# long format for boxplots
+before_after <- before_after %>% pivot_longer(
+  cols = everything(),
+  names_to = c("variable", "time"),
+  names_sep = "_",
+  values_to = "value"
+) %>% 
+  mutate(time = factor(time, levels = c("before", "after")))
+
+# Before after plot
+ggplot(before_after, aes(x=variable, y=value, fill=time)) + 
+  geom_boxplot()
+
+# Removing NA rows from the dataset (actually removing the outliers)
+cat("Rows containing outliers:", sum(!complete.cases(train_wo_outliers)), "\n")
+train_wo_outliers <- na.omit(train_wo_outliers)
+cat("Remaining rows:", nrow(train_wo_outliers), "\n")
+```
+
+### One-hot-encoding for categorical values
+Deep learning can only handle numerical values, so we need to create a one-hot encoding for all categorical variables.
+```{r}
+# encoding nominal variables in one-hot encoding
+nominal_vars <- c("Mjob","Fjob","reason","guardian")
+
+train_one_hot <- dummy_cols(
+  train_wo_outliers,
+  select_columns = nominal_vars,
+  remove_selected_columns = TRUE
+)
+```
+
+We also need to convert binary factors to 0 or 1.
+```{r}
+# converting binary variables to 0 or 1
+binary_vars <- c("school","sex","address", "famsize", "Pstatus")
+
+# assigning TRUE or FALSE to binary values (the second possible value is assigned 1 the first 0)
+train_one_hot <- train_one_hot %>% mutate(across(all_of(binary_vars), ~ as.integer(.x == levels(.x)[2])))
+```
+
+
+### Train test split
+We need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
+```{r}
+# set seed for reproducibility
+set.seed(123)
+
+#first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
+train_split <- sample.split(train_wo_outliers$score, SplitRatio = 0.8)
+val_split <- sample.split(train_wo_outliers$score[!train_split], SplitRatio = 0.5)
+
+# save the row indices that are part of the set
+train_ids <- which(train_split)
+temp_ids <- which(!train_split)
+val_ids <- temp_ids[val_split]
+test_ids <- temp_ids[!val_split]
+
+# dataset for k-nearest neighbors and linear regression (normalized)
+train_set <- train_wo_outliers[train_ids, ]
+test_set <- train_wo_outliers[test_ids, ]
+val_set <- train_wo_outliers[val_ids, ]
+
+# dataset for deep learning (normalized & one-hot encoded)
+train_deep <- train_one_hot[train_ids, ]
+test_deep <- train_one_hot[test_ids, ]
+val_deep <- train_one_hot[val_ids, ]
+```
+# Model description
+A linear regression model is a parametric method that assumes a linear relationship between the feature variables and the target variable; "score". This means that it estimates the impact of each variable on the score by giving all variables a coefficient, that determines if a variable impacts the score and how it impacts it. After we train the model on the train data, these coefficients are then used to make predictions on the test dataset.
+
+## Linear regression
+```{r}
+#Creating the model
+lin_regression <- lm(score ~ ., data = train_set)
+
+#Check the performance of the model
+summary(lin_regression)
+plot(lin_regression)
+
+#calculate the MSE for the linear model
+predictions_linear <- predict(lin_regression, newdata = test_set)
+true_score <- test_set$score
+
+lin_reg_mse <- mean((true_score- predictions_linear)^2)
+print(lin_reg_mse)
+```
+The fitted model explains approximately 35.5% of the variance in student scores, indicating that at least one of the predictors contributes to explaining variation in the dependent variable.
+
+### Assumption Checking
+
+1. Residuals vs Fitted
+
+The residuals appear randomly scattered around zero with no clear pattern, this means that the linearity assumption is met. The slight curvature in the red trend line is minor and does not indicate strong nonlinearity.
+
+2. Q–Q Plot
+
+The residuals fall closely along the 45° reference line, implying that the normality assumption of residuals is reasonably satisfied. A few mild deviations at the tails are visible but not severe enough to threaten inference validity.
+
+3. Scale–Location Plot
+
+The spread of residuals is roughly constant across fitted values, supporting the homoscedasticity assumption (equal variance of errors).There is no strong funnel shape,
+
+4. Residuals vs Leverage
+
+Most data points fall within the Cook’s distance boundaries, meaning no highly influential observations that  affect model estimates. A few points  show slightly higher leverage but remain within acceptable limits.
+
+### Checking for Multicollinearity
+
+To assess multicollinearity among the independent variables, the Variance Inflation Factor (VIF) was computed using the `car::vif()` function. The Generalized VIF (GVIF) and its adjusted value `GVIF^(1/(2*Df))` were examined to identify any predictors exhibiting high multicollinearity.
+
+| Threshold | Interpretation |
+|------------|----------------|
+| < 2        | Low multicollinearity (ideal) |
+| 2–5        | Moderate multicollinearity (acceptable) |
+| > 5        | High multicollinearity (problematic) |
+
+```{r}
+# Check VIF values
+vif(lin_regression)
+```
+
+```{r}
+vif_values <- vif(lin_regression)
+high_vif <- vif_values[vif_values[, "GVIF"] > 5, ]
+high_vif
+```
+There are no highly influential points, all fall under the 5 threshold, so there is no need to remove a predictor and to rebuild the model with new data
+
+## KNN-regression
+The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
+
+```{r}
+#KNN regression
+model_knn <- train.kknn(
+  score ~ .,
+  data = train_set,
+  kmax = 10,
+  distance = 2,
+  kernel = "optimal"
+)
+
+# checking model parameters
+model_knn
+plot(model_knn)
+
+# creating predictions
+predictions_knn <- predict(model_knn, newdata = test_set)
+```
+
+## Deep learning model
+For the deep learning we try to use a complex model that should be more than able to learn the pattern in the data. We use 3 layers with 128, 64 and 32 nodes respectively, with a 0.2 dropout between the layers. The training runs for 1000 epochs with an early stopping monitor that stops the training earlier once the model starts to overfit. 
+```{r}
+# setting seed for reproducability
+tf$random$set_seed(123L)
+
+# defining input and output
+x_train <- train_deep %>% select(-score) %>% as.matrix()
+x_val <- val_deep %>% select(-score) %>% as.matrix()
+x_test <- test_deep %>% select(-score) %>% as.matrix()
+
+# normalizing scores with z-score normalization 
+y_train <- train_deep$score
+y_val <- val_deep$score
+y_test <- test_deep$score
+
+# defining model
+model_deepl <- keras_model_sequential() %>%
+  layer_dense(units= 128, activation = "relu", input_shape = ncol(x_train)) %>%
+  layer_dropout(rate = 0.2) %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dropout(rate=0.2) %>%
+  layer_dense(units = 32, activation = "relu") %>%
+  layer_dense(units = 1)
+
+# compiling
+model_deepl %>% compile(
+  optimizer = optimizer_adam(learning_rate = 0.0003),
+  loss = "mse",
+  metrics = list("mae","mse")
+)
+
+# training
+history <- model_deepl %>% fit(
+  x = x_train,
+  y = y_train,
+  epochs = 1000,
+  batch_size = 32,
+  validation_data = list(x_val, y_val),
+  callbacks = list(callback_early_stopping(monitor = "val_loss", patience = 20)),
+  verbose = 0
+)
+
+# evaluation
+model_deepl %>% evaluate(x_test, y_test, verbose = 1)
+predictions_deepl <- model_deepl %>% predict(x_test)
+```
+
+
+# Model comparison
+
+To compare the models we are using Mean Average Error and Mean Squared Error. These metrics show us how close the predictions are to the real scores. MSE punishes big mistakes more, whereas MAE punishes each error equally. 
+
+Besides this, we also look at the range of estimates that the models produce, and see if the predictions are similarly distributed as the real scores.
+
+```{r}
+true_scores <- test_set$score
+
+mae_linear <- mean(abs(true_scores - predictions_linear))
+mae_knn <- mean(abs(true_scores - predictions_knn))
+mae_deepl <- mean(abs(true_scores - predictions_deepl))
+
+mse_linear <- mean((true_scores - predictions_linear)^2)
+mse_knn <- mean((true_scores - predictions_knn)^2)
+mse_deepl <- mean((true_scores - predictions_deepl)^2)
+
+data.frame(
+  model = c("Linear Regression", "K-Nearest Neighbours", "Deep Learning"),
+  mean_absolute_error = c(mae_linear, mae_knn, mae_deepl),
+  mean_squared_error = c(mse_linear, mse_knn, mse_deepl)
+)
+```
+Our best performing model is the deep learning, which slightly outperforms the KNN and linear regression. LR and KNN seem to be very similar in performance. Since there are no big differences between the models, we can assume that the data is mostly linear. 
+
+```{r}
+prediction_comparison <- 
+  tibble(
+    "True Scores" = true_scores, 
+    "Linear Regression" = predictions_linear, 
+    "KNN" = predictions_knn, 
+    "Deep Learning" = predictions_deepl
+    ) %>% 
+  pivot_longer(cols=everything(), names_to = "Model", values_to = "Scores") %>%
+  mutate(Model = factor(Model, levels=c("True Scores", "Linear Regression", "KNN", "Deep Learning")))
+
+ggplot(prediction_comparison, aes(x=Model, y=Scores, fill=Model)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(y = "Scores", x="", title = "Predictions vs True Scores") +
+  guides(fill="none")
+```
+If we look at the distribution of the data, we can see that none of the models capture the range of scores that the students actually had and all of them estimate scores to be closer to the mean. The deep learning has the highest range of predictions that is most similar to the test set, but it still doesn't cover all the scores. 
+
+# Chosen model
+We chose the deep learning as our final models, since it produces the lowest error and the most similar distribution of predictions to the test data.
+
+### Preparing the test dataset
+For the test dataset we also have to carry out the same steps.
+Since the deep learning and KNN models are sensitive to scaling, we have to also normalize the test dataset to create accurate predictions. 
+```{r}
+# change categorical variables to factors
+test_clean <- test %>%
+  mutate(across(where(is.character), as.factor))
+
+# Identify yes/no columns automatically and assign them boolean values
+test_clean <- test_clean %>%
+  mutate(across(
+    where(~ (is.character(.) || is.factor(.)) && all(tolower(unique(.)) %in% c("yes", "no"))),
+    ~ tolower(as.character(.)) == "yes"
+  ))
+
+# scaling 1-5 scores (5 will be 1 and 1 will be scaled to 0)
+test_norm <- test_clean %>% mutate(across(c("famrel","freetime","goout","Dalc","Walc", "health"), ~ (. - 1) / 4))
+
+# scaling 1-4 scores (4 will be 1 and 1 will be scaled to 0)
+test_norm <- test_clean %>% mutate(across(c(Medu, Fedu), ~ . / 4))
+
+# scaling bin-type variables to their midpoints (traveltime and studytime)
+
+# travel time in minutes with approximate midpoints
+test_norm <- test_norm %>%
+  mutate(traveltime = case_when(
+    traveltime == 1 ~ 7.5,
+    traveltime == 2 ~ 22.5,
+    traveltime == 3 ~ 45,
+    traveltime == 4 ~ 75
+  )) 
+
+# studytime in hours with approximate midpoints
+test_norm <- test_norm %>%
+  mutate(studytime = case_when(
+    studytime == 1 ~ 1,
+    studytime == 2 ~ 3.5,
+    studytime == 3 ~ 7.5,
+    studytime == 4 ~ 12
+  ))
+
+test_norm <- test_norm %>% 
+  mutate(
+    traveltime = (traveltime - min(traveltime)) / (max(traveltime) - min(traveltime)),
+    studytime = (studytime - min(studytime)) / (max(studytime) - min(studytime))
+    )
+
+# scaling using normal distribution
+test_norm <- test_norm %>% mutate(across(c(failures, age, absences), ~ as.numeric(scale(.))))
+
+nominal_vars <- c("Mjob","Fjob","reason","guardian")
+
+test_one_hot <- dummy_cols(
+  test_norm,
+  select_columns = nominal_vars,
+  remove_selected_columns = TRUE
+)
+
+# converting binary variables to 0 or 1
+binary_vars <- c("school","sex","address", "famsize", "Pstatus")
+
+# assigning TRUE or FALSE to binary values (the second possible value is assigned 1 the first 0)
+test_one_hot <- test_one_hot %>% mutate(across(all_of(binary_vars), ~ as.integer(.x == levels(.x)[2])))
+```
+
+### Creating rds file with test predictions
+```{r}
+# creating predictions
+x_test_data <- test_one_hot %>% as.matrix()
+test_data_predictions <- model_deepl %>% predict(x_test)
+
+# create vector & write rds
+pred_vec <- as.vector(test_data_predictions)
+write_rds(pred_vec, 'predictions.rds')
+```
+
+
+# Team member contributions
+
+Write down what each team member contributed to the project.
+<ul>
+<li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
+<li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
+<li>Osaro Orebor: Preprocessing step and handling the assumptions. I made the layout look nice 
+<li>Niels Wagenaar: trained linear regression and wrote the description
+
