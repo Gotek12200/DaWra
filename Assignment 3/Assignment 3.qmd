@@ -20,7 +20,6 @@ execute:
 # Loading Library
 ```{r}
 #| label: R packages
-#| echo: false
 #| warning: false
 #| message: false
 
@@ -41,8 +40,6 @@ library(tensorflow)
 # Loading in the Data
 ```{r}
 #| label: data loading
-#| echo: false
-
 train <- readRDS("train.rds")
 test <- readRDS("test.rds")
 ```
@@ -57,7 +54,7 @@ The split between males and females is relatively equal (Female: 173, Male: 143)
 
 Based on the graph below, majority of students have the score below the norm(-0.4 in our case), but most of scores are centered around +-1, showcasing normal average performance. Scores close to -3 to 2.5 are in minority and are considered outliers from students' norm.
 
-##Score distribution
+## Score distribution
 
 ```{r}
 ggplot(train, aes(x = score)) +
@@ -99,6 +96,7 @@ correlations <- train %>%
 head(correlations, 10)
 ```
 There are some predictors that have a higher correlation, later in the report we will check the Multicollinearity to see if they influence the model/
+
 # Data transformation and pre-processing
 
 ### Checking for & handling missing values
@@ -222,10 +220,11 @@ cat("Remaining rows:", nrow(train_wo_outliers), "\n")
 ### One-hot-encoding for categorical values
 Deep learning can only handle numerical values, so we need to create a one-hot encoding for all categorical variables.
 ```{r}
+# encoding nominal variables in one-hot encoding
 nominal_vars <- c("Mjob","Fjob","reason","guardian")
 
 train_one_hot <- dummy_cols(
-  train_norm,
+  train_wo_outliers,
   select_columns = nominal_vars,
   remove_selected_columns = TRUE
 )
@@ -233,6 +232,7 @@ train_one_hot <- dummy_cols(
 
 We also need to convert binary factors to 0 or 1.
 ```{r}
+# converting binary variables to 0 or 1
 binary_vars <- c("school","sex","address", "famsize", "Pstatus")
 
 # assigning TRUE or FALSE to binary values (the second possible value is assigned 1 the first 0)
@@ -247,8 +247,8 @@ We need to split the train dataset to a sample used for training, a sample used 
 set.seed(123)
 
 #first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
-train_split <- sample.split(train$score, SplitRatio = 0.8)
-val_split <- sample.split(train$score[!train_split], SplitRatio = 0.5)
+train_split <- sample.split(train_wo_outliers$score, SplitRatio = 0.8)
+val_split <- sample.split(train_wo_outliers$score[!train_split], SplitRatio = 0.5)
 
 # save the row indices that are part of the set
 train_ids <- which(train_split)
@@ -257,9 +257,9 @@ val_ids <- temp_ids[val_split]
 test_ids <- temp_ids[!val_split]
 
 # dataset for k-nearest neighbors and linear regression (normalized)
-train_set <- train_norm[train_ids, ]
-test_set <- train_norm[test_ids, ]
-val_set <- train_norm[val_ids, ]
+train_set <- train_wo_outliers[train_ids, ]
+test_set <- train_wo_outliers[test_ids, ]
+val_set <- train_wo_outliers[val_ids, ]
 
 # dataset for deep learning (normalized & one-hot encoded)
 train_deep <- train_one_hot[train_ids, ]
@@ -272,7 +272,7 @@ A linear regression model is a parametric method that assumes a linear relations
 ## Linear regression
 ```{r}
 #Creating the model
-lin_regression <- lm(score ~ ., data = train_wo_outliers)
+lin_regression <- lm(score ~ ., data = train_set)
 
 #Check the performance of the model
 summary(lin_regression)
@@ -331,21 +331,21 @@ There are no highly influential points, all fall under the 5 threshold, so there
 The KNN regression is a non-parametric model which makes predictions based on what the closest neighbours are doing. Usually we pick K=5 and K=10, where K is the number of neighors considered. As a result, if we want to predict the score with the KNN regression model, we need to find the K most similar students and then take the average of the scores. The model we used will check all the possible K values with the maximum K equal to 10, and then it will return the predictions with the best K. For our data the best K is 10.
 
 ```{r}
-#KNN regression without the outliers
-model_2 <- train.kknn(
+#KNN regression
+model_knn <- train.kknn(
   score ~ .,
-  data = train_wo_outliers,
+  data = train_set,
   kmax = 10,
   distance = 2,
   kernel = "optimal"
 )
 
-model_2
+# checking model parameters
+model_knn
+plot(model_knn)
 
-plot(model_2)
-
-
-pred_wo_outliers <- predict(model_2, newdata = test)
+# creating predictions
+predictions_knn <- predict(model_knn, newdata = test_set)
 ```
 
 ## Deep learning model
@@ -365,7 +365,7 @@ y_val <- val_deep$score
 y_test <- test_deep$score
 
 # defining model
-model <- keras_model_sequential() %>%
+model_deepl <- keras_model_sequential() %>%
   layer_dense(units= 128, activation = "relu", input_shape = ncol(x_train)) %>%
   layer_dropout(rate = 0.2) %>%
   layer_dense(units = 64, activation = "relu") %>%
@@ -374,14 +374,14 @@ model <- keras_model_sequential() %>%
   layer_dense(units = 1)
 
 # compiling
-model %>% compile(
+model_deepl %>% compile(
   optimizer = optimizer_adam(learning_rate = 0.0003),
   loss = "mse",
   metrics = list("mae","mse")
 )
 
 # training
-history <- model %>% fit(
+history <- model_deepl %>% fit(
   x = x_train,
   y = y_train,
   epochs = 1000,
@@ -392,8 +392,8 @@ history <- model %>% fit(
 )
 
 # evaluation
-model %>% evaluate(x_test, y_test, verbose = 1)
-predictions_deepl <- model %>% predict(x_test)
+model_deepl %>% evaluate(x_test, y_test, verbose = 1)
+predictions_deepl <- model_deepl %>% predict(x_test)
 ```
 
 
@@ -420,7 +420,7 @@ data.frame(
   mean_squared_error = c(mse_linear, mse_knn, mse_deepl)
 )
 ```
-Interestingly, it seems that both the KNN and the neural network underfits the data, since the linear regression has the least MAE and MSE. Possible reasons for this could be a mostly linear dataset, or that the dataset is relatively small (only 316 entries altogether). 
+Our best performing model is the deep learning, which slightly outperforms the KNN and linear regression. LR and KNN seem to be very similar in performance. Since there are no big differences between the models, we can assume that the data is mostly linear. 
 
 ```{r}
 prediction_comparison <- 
@@ -439,14 +439,86 @@ ggplot(prediction_comparison, aes(x=Model, y=Scores, fill=Model)) +
   labs(y = "Scores", x="", title = "Predictions vs True Scores") +
   guides(fill="none")
 ```
-If we look at the distribution of the data, we can see that none of the models capture the range of scores that the students actually had and all of them estimate scores to be closer to the mean. The deep learning network has the widest range, but it does not outperform the linear regression in accuracy. 
+If we look at the distribution of the data, we can see that none of the models capture the range of scores that the students actually had and all of them estimate scores to be closer to the mean. The deep learning has the highest range of predictions that is most similar to the test set, but it still doesn't cover all the scores. 
 
 # Chosen model
+We chose the deep learning as our final models, since it produces the lowest error and the most similar distribution of predictions to the test data.
 
-Show which method is best and why. (approx. one paragraph) You are welcome to use tables and plots!
+### Preparing the test dataset
+For the test dataset we also have to carry out the same steps.
+Since the deep learning and KNN models are sensitive to scaling, we have to also normalize the test dataset to create accurate predictions. 
+```{r}
+# change categorical variables to factors
+test_clean <- test %>%
+  mutate(across(where(is.character), as.factor))
 
+# Identify yes/no columns automatically and assign them boolean values
+test_clean <- test_clean %>%
+  mutate(across(
+    where(~ (is.character(.) || is.factor(.)) && all(tolower(unique(.)) %in% c("yes", "no"))),
+    ~ tolower(as.character(.)) == "yes"
+  ))
 
+# scaling 1-5 scores (5 will be 1 and 1 will be scaled to 0)
+test_norm <- test_clean %>% mutate(across(c("famrel","freetime","goout","Dalc","Walc", "health"), ~ (. - 1) / 4))
 
+# scaling 1-4 scores (4 will be 1 and 1 will be scaled to 0)
+test_norm <- test_clean %>% mutate(across(c(Medu, Fedu), ~ . / 4))
+
+# scaling bin-type variables to their midpoints (traveltime and studytime)
+
+# travel time in minutes with approximate midpoints
+test_norm <- test_norm %>%
+  mutate(traveltime = case_when(
+    traveltime == 1 ~ 7.5,
+    traveltime == 2 ~ 22.5,
+    traveltime == 3 ~ 45,
+    traveltime == 4 ~ 75
+  )) 
+
+# studytime in hours with approximate midpoints
+test_norm <- test_norm %>%
+  mutate(studytime = case_when(
+    studytime == 1 ~ 1,
+    studytime == 2 ~ 3.5,
+    studytime == 3 ~ 7.5,
+    studytime == 4 ~ 12
+  ))
+
+test_norm <- test_norm %>% 
+  mutate(
+    traveltime = (traveltime - min(traveltime)) / (max(traveltime) - min(traveltime)),
+    studytime = (studytime - min(studytime)) / (max(studytime) - min(studytime))
+    )
+
+# scaling using normal distribution
+test_norm <- test_norm %>% mutate(across(c(failures, age, absences), ~ as.numeric(scale(.))))
+
+nominal_vars <- c("Mjob","Fjob","reason","guardian")
+
+test_one_hot <- dummy_cols(
+  test_norm,
+  select_columns = nominal_vars,
+  remove_selected_columns = TRUE
+)
+
+# converting binary variables to 0 or 1
+binary_vars <- c("school","sex","address", "famsize", "Pstatus")
+
+# assigning TRUE or FALSE to binary values (the second possible value is assigned 1 the first 0)
+test_one_hot <- test_one_hot %>% mutate(across(all_of(binary_vars), ~ as.integer(.x == levels(.x)[2])))
+```
+
+### Creating rds file with test predictions
+```{r}
+# creating predictions
+x_test_data <- test_one_hot %>% as.matrix()
+test_data_predictions <- model_deepl %>% predict(x_test)
+
+# create vector & write rds
+pred_vec <- as.vector(test_data_predictions)
+write_rds(pred_vec, 'predictions.rds')
+```
 
 
 # Team member contributions
@@ -455,6 +527,6 @@ Write down what each team member contributed to the project.
 <ul>
 <li>Mate Csikos-Nagy: set up template & git in R studio, deep learning model, model comparisons
 <li>Fani Profiti: outlier detection & performance comparison, k-nearest neighbors model
-<li>Osaro Orebor: Preprocessing step and handeling the assumptions. I made the layout look nice 
+<li>Osaro Orebor: Preprocessing step and handling the assumptions. I made the layout look nice 
 <li>Niels Wagenaar: trained linear regression and wrote the description
 

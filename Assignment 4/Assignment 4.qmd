@@ -1,0 +1,251 @@
+---
+title: "Text clustering"
+author: 
+  - Osaro Orebor 1168827
+  - Máté Csikós-Nagy 4395565
+  - Fani Profiti 1240390
+  - Yara Yachnyk 4913329
+  - Niels Wagenaar 3133998
+date: last-modified
+format:
+  html:
+    toc: true
+    self-contained: true
+    code-fold: true
+    df-print: kable
+execute:
+  warning: false
+  message: false
+  echo: true
+---
+
+```{r}
+#| label: R packages
+#| echo: false
+#| warning: false
+#| message: false
+
+library(text2vec)
+library(wordcloud)
+library(magrittr)
+library(tm)
+library(dplyr)
+library(tidyverse)
+library(tidytext)
+library(stringr)
+library(stopwords)
+library(caTools)
+
+# additional packages here
+```
+
+```{r}
+#| label: data loading
+
+data("movie_review")
+movie_review <- as_tibble(movie_review)
+```
+
+```{r}
+glimpse(movie_review) #take a quick glance at data
+summary(movie_review) 
+sapply(movie_review, class) #identify classes of dataset variables for sentiment analysis
+table(movie_review$sentiment) #see the distribution of negative and positive reviews
+```
+
+# Data description
+Based on the dataset "movie_review" embedded in text2vec package, we see the selection of positive and negative reviews of movie viewers, relatively evenly distributed in the dataset (2483 negative and 2517 positive reviews) denoted with score 1 if the IMDB rating was >= 7 or 0 if rating is <5 accordingly.
+
+
+
+Describe the data and use a visualization to support your story. (approx. one or two paragraphs
+
+```{r}
+#| label: eda visualization
+#| warning: false
+
+# your R code to generate the plot here
+movie_review %$% wordcloud(review, 
+                           min.freq = 10, 
+                           max.words = 50, 
+                           random.order = FALSE,
+                           colors = brewer.pal(8, "Dark2"))
+
+```
+
+# Text pre-processing
+### Train test split
+Before starting text pre-processing steps, we first need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
+```{r}
+# set seed for reproducibility
+set.seed(123)
+
+#first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
+train_split <- sample.split(movie_review$sentiment, SplitRatio = 0.8)
+val_split <- sample.split(movie_review$sentiment[!train_split], SplitRatio = 0.5)
+
+# save the row indices that are part of the set
+train_ids <- which(train_split)
+temp_ids <- which(!train_split)
+val_ids <- temp_ids[val_split]
+test_ids <- temp_ids[!val_split]
+
+# final datasets
+train_set <- movie_review[train_ids, ]
+test_set <- movie_review[test_ids, ]
+val_set <- movie_review[val_ids, ]
+```
+For sentimental analysis enhancement we will further on clean the text from review column based on pre-processing methods @selectedbyourgroup.
+But first, we will change sentiment column to factor class:
+
+```{r}
+train_set$sentiment <- as.factor(train_set$sentiment)
+sapply(train_set, class) #checking the factor change
+```
+Next, we will remove empty rows with no text or duplicates, which leaves us with 4996 observations.
+
+```{r}
+train_set <- train_set %>% 
+  filter(!is.na(review)) %>%
+  distinct(review, .keep_all = T)
+```
+Now, we will lowercase all the letters in the texts:
+```{r}
+clean_train_set <- train_set %>%
+  mutate(review = review %>%
+      str_to_lower() %>% # induce lowercase
+  str_squish()) #remove extra space
+```
+
+Next, we will tokenize review column:
+
+```{r}
+clean_train_set <- clean_train_set |> 
+  unnest_tokens(word, review)
+```
+
+We then received 967628 observations from 3997 reviews; now let's see the most common words from our reviews (we use ggplot function):
+
+```{r}
+clean_train_set |> 
+  # count the frequency of each word
+  count(word) |> 
+  # arrange the words by its frequency in descending order
+  arrange(desc(n)) |> 
+  # select the top 30 most frequent words
+  head(30) |> 
+  # (reorder words by their frequencies)
+  ggplot(aes(x = n, y = reorder(word, n))) + 
+  geom_col(fill="lightblue") +
+  labs(x = "frequency", y="words") + 
+  theme_classic()
+```
+We see that many of the top words can be considered "stop words" since they bring no significant importance to review meanings, let's remove stop words(except for not because then we can imply window context words to identify negative or positive meanings of bigger phrases:
+
+```{r}
+stop_words <- c(
+  "the", "and", "a", "of", "to", "is", "it", "in", "this", "that", "was",
+  "as", "with", "for", "movie", "but", "film", "you", "he", "his", "are", "have", "be", "one"
+)
+stop_words <- tibble(word=stop_words)
+  clean_train <- clean_train_set %>%
+    anti_join(stop_words, by = "word")
+```
+Eventually, we are left with 663508 observations. Let's see our top words now:
+```{r}
+clean_train |> 
+  # count the frequency of each word
+  count(word) |> 
+  # arrange the words by its frequency in descending order
+  arrange(desc(n)) |> 
+  # select the top 30 most frequent words
+  head(30) |> 
+  # (reorder words by their frequencies)
+  ggplot(aes(x = n, y = reorder(word, n))) + 
+  geom_col(fill="lightblue") +
+  labs(x = "frequency", y="words") + 
+  theme_classic()
+```
+There are still some stop words left, and removing them all manually might be time-consuming. Let's instead use the dataset smart_stopwords from library(stopwords) and modify it with those words that we want to use in the analysis(for example, leaving negative particles to see the negative review sensitivity). We will also add words to the "stoplist" that don't make sense for our analysis or neutral movie words that don't have sentimental signal:
+
+```{r}
+smart_stopwords <- stopwords(source = "smart")
+stop_words <- tibble(word=smart_stopwords)
+df_stopwords <- stop_words %>%
+  filter(!word %in% c("neither", "never", "no", "nobody", "non", "none", "not", "nothing", "nowhere", "awfully", "best", "better", "cannot", "least", "less", "like", "little", "serious", "thanks", "welcome", "want", "willing", "will", "wish", "without")) %>%
+  rbind(tibble(word = c("br", "made", "make", "movie", "film", "films", "movies", "story", "plot",
+  "character", "characters", "people", "show", "watch",
+  "life", "scene", "end", "man", "time")))
+#removing stop words
+  clean_train <- clean_train_set %>%
+    anti_join(df_stopwords, by = "word")
+```
+
+In the end, we received 384141 observations to work with. 
+```{r}
+clean_train |> 
+  # count the frequency of each word
+  count(word) |> 
+  # arrange the words by its frequency in descending order
+  arrange(desc(n)) |> 
+  # select the top 30 most frequent words
+  head(30) |> 
+  # (reorder words by their frequencies)
+  ggplot(aes(x = n, y = reorder(word, n))) + 
+  geom_col(fill="lightblue") +
+  labs(x = "frequency", y="words") + 
+  theme_classic()
+```
+Document_term_matrix:
+
+```{r}
+# make it a list (iterator)
+clean_train_ls <- list(clean_train$word)
+
+# create index-tokens
+it_train <- itoken(clean_train_ls, progressbar = FALSE)
+
+# collecting unique terms
+train_vocab <- create_vocabulary(it_train)
+
+# filtering infrequent terms
+train_vocab <- prune_vocabulary(train_vocab, term_count_min=5)
+
+vectorizer = vocab_vectorizer(train_vocab)
+
+# creating document term matrix
+dtm_train = create_dtm(it_train, vectorizer)
+
+```
+
+# Text representaion
+
+Briefly describe your text representation method. (approx. one or two paragraphs)
+
+# Text clustering
+
+Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
+
+# Evaluation & model comparison
+
+Describe how you compare the methods and why. (approx. two or three paragraphs)
+
+
+```{r}
+#| label: table example
+data.frame(
+  model       = c("clustering model 1", "clustering model 2"),
+  performance = c(1.2, 1.8),
+  other       = c(0.5, 0.3),
+  notes       = c("Some note", "another note")
+)
+```
+
+
+# Team member contributions
+
+Write down what each team member contributed to the project.
+
+- Author One: a, b, c
+- Author Two: b, c, d
+- Author Three: a, b, d
