@@ -199,11 +199,13 @@ clean_train |>
 Document_term_matrix:
 
 ```{r}
-# make it a list (iterator)
-clean_train_ls <- list(clean_train$word)
+# recombining words into reviews for the DTM
+train_docs <- clean_train %>%
+  group_by(id) %>%
+  summarize(review = paste(word, collapse = " "))
 
 # create index-tokens
-it_train <- itoken(clean_train_ls, progressbar = FALSE)
+it_train <- itoken(train_docs$review, progressbar = FALSE)
 
 # collecting unique terms
 train_vocab <- create_vocabulary(it_train)
@@ -216,6 +218,7 @@ vectorizer = vocab_vectorizer(train_vocab)
 # creating document term matrix
 dtm_train = create_dtm(it_train, vectorizer)
 
+dtm_dense <- as.matrix(dtm_train)
 ```
 
 # Text representaion
