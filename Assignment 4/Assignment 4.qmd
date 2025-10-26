@@ -25,6 +25,9 @@ execute:
 #| warning: false
 #| message: false
 
+
+library(Rtsne)
+library(topicmodels)
 library(text2vec)
 library(wordcloud)
 library(magrittr)
@@ -226,6 +229,11 @@ dtm_dense <- as.matrix(dtm_train)
 Briefly describe your text representation method. (approx. one or two paragraphs)
 
 # Text clustering
+#K-MEANS CLUSTERING
+```{r}
+
+
+```
 
 Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
 
@@ -243,6 +251,7 @@ data.frame(
   notes       = c("Some note", "another note")
 )
 ```
+
 
 
 # Team member contributions
