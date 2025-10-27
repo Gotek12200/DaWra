@@ -231,6 +231,20 @@ Briefly describe your text representation method. (approx. one or two paragraphs
 # Text clustering
 #K-MEANS CLUSTERING
 ```{r}
+dtm_matrix <- as.matrix(dtm_train)
+k <- 5 
+
+set.seed(123)
+
+km <- kmeans(dtm_matrix, centers = k)
+print(km)
+
+clusters <- km$cluster
+
+clusters
+
+##Visualization
+
 
 
 ```
