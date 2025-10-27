@@ -245,9 +245,17 @@ clusters
 
 ##Visualization
 
+library(ggplot2)
+
+plot_df <- data.frame(
+  cluster = as.factor(clusters)
+)
+print( ggplot(plot_df, aes(x = cluster, fill = cluster)) + 
+  geom_bar() +
+  ggtitle("K-means") +
+  theme(plot.title = element_text(hjust = 0.5)))
 
 
-```
 
 Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
 
