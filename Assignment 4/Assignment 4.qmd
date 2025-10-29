@@ -98,6 +98,34 @@ train_set <- movie_review[train_ids, ]
 test_set <- movie_review[test_ids, ]
 val_set <- movie_review[val_ids, ]
 ```
+
+```{r}
+split_movie_dataset <- function (movie_review, sentiment = "sentiment"){
+
+      # set seed for reproducibility
+      set.seed(123)
+
+      #first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
+      train_split <- sample.split(movie_review$sentiment, SplitRatio = 0.8)
+      val_split <- sample.split(movie_review$sentiment[!train_split], SplitRatio = 0.5)
+
+      # save the row indices that are part of the set
+      train_ids <- which(train_split)
+      temp_ids <- which(!train_split)
+      val_ids <- temp_ids[val_split]
+      test_ids <- temp_ids[!val_split]
+
+      # return final datasets
+      return(list(
+          train_set = movie_review[train_ids, ],
+          test_set = movie_review[test_ids, ],
+          val_set = movie_review[val_ids, ]
+      ))
+}
+
+data_splits <- split_movie_dataset(movie_review = movie_review)
+
+```
 For sentimental analysis enhancement we will further on clean the text from review column based on pre-processing methods @selectedbyourgroup.
 But first, we will change sentiment column to factor class:
 
@@ -199,6 +227,54 @@ clean_train |>
   labs(x = "frequency", y="words") + 
   theme_classic()
 ```
+
+
+```{r}
+smart_stopwords <- stopwords(source = "smart")
+stop_words <- tibble(word=smart_stopwords)
+df_stopwords <- stop_words %>%
+      filter(!word %in% c("neither", "never", "no", "nobody", "non", "none", "not", "nothing", "nowhere", "awfully", "best", "better", "cannot", "least", "less", "like", "little", "serious", "thanks", "welcome", "want", "willing", "will", "wish", "without")) %>%
+      rbind(tibble(word = c("br", "made", "make", "movie", "film", "films", "movies", "story", "plot",
+      "character", "characters", "people", "show", "watch",
+      "life", "scene", "end", "man", "time")))
+
+clean_docs_data <- function (data, df_stopwords){
+
+    cleaned_docs <- data %>%
+        # First, we will change sentiment column to factor class:
+        mutate(sentiment = as.factor(sentiment)) %>%
+
+        # Next, we will remove empty rows with no text or duplicates, which leaves us with 4996 observations.
+        dplyr::filter(!is.na(review)) %>%
+        distinct(review, .keep_all = T) %>%
+
+        # We will lowercase all the letters in the texts:
+        mutate(review = review %>%
+          str_to_lower() %>% # induce lowercase
+          str_squish()) %>%  # remove extra space
+
+        # Next, we will tokenize review column:
+        unnest_tokens(word, review) %>%
+
+        # Removing stop words
+        anti_join(df_stopwords, by = "word") %>%
+
+        # Recombining words into reviews for the DTM
+        group_by(id) %>%
+        summarize(review = paste(word, collapse = " ")) %>%
+        ungroup()
+
+    return(cleaned_docs)
+
+}
+
+train_docs <- clean_docs_data(data = data_splits$train_set, df_stopwords)
+val_docs <- clean_docs_data(data = data_splits$val_set, df_stopwords)
+test_docs <- clean_docs_data(data = data_splits$test_set, df_stopwords)
+
+```
+
+
 Document_term_matrix:
 
 ```{r}
