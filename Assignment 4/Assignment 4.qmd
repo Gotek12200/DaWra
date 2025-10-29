@@ -242,9 +242,9 @@ print(km)
 clusters <- km$cluster
 
 clusters
-
+```
 ##Visualization
-
+```{r}
 library(ggplot2)
 
 plot_df <- data.frame(
@@ -256,7 +256,7 @@ print( ggplot(plot_df, aes(x = cluster, fill = cluster)) +
   theme(plot.title = element_text(hjust = 0.5)))
 
 
-
+```
 Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
 
 # Evaluation & model comparison
