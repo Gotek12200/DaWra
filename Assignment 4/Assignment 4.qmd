@@ -38,8 +38,7 @@ library(tidytext)
 library(stringr)
 library(stopwords)
 library(caTools)
-
-# additional packages here
+library(RcppML)
 ```
 
 ```{r}
@@ -305,7 +304,7 @@ dtm_dense <- as.matrix(dtm_train)
 Briefly describe your text representation method. (approx. one or two paragraphs)
 
 # Text clustering
-#K-MEANS CLUSTERING
+## K-MEANS CLUSTERING
 ```{r}
 dtm_matrix <- as.matrix(dtm_train)
 k <- 5 
@@ -319,20 +318,62 @@ clusters <- km$cluster
 
 clusters
 ```
-##Visualization
+
+### Visualization
 ```{r}
 library(ggplot2)
 
 plot_df <- data.frame(
   cluster = as.factor(clusters)
 )
-print( ggplot(plot_df, aes(x = cluster, fill = cluster)) + 
+print(ggplot(plot_df, aes(x = cluster, fill = cluster)) + 
   geom_bar() +
   ggtitle("K-means") +
   theme(plot.title = element_text(hjust = 0.5)))
 
 
 ```
+
+## NMF
+```{r}
+# Number of clusters
+k <- 5
+
+# Running the model
+nmf_res <- nmf(dtm_dense, k = k, seed = 123)
+
+# Document topic matrix
+W <- nmf_res$w
+
+# Topic-term matrix
+H <- nmf_res$h
+
+# Inspect top words per topic
+top_n_words <- 10
+terms <- colnames(dtm_dense)
+
+for (i in 1:k) {
+  topic_terms <- terms[order(as.numeric(H[i, ]), decreasing = TRUE)[1:top_n_words]]
+  cat(paste0("Topic ", i, ": ", paste(topic_terms, collapse = ", "), "\n"))
+}
+
+# Assigning each document to the topic with the highest weight
+clusters <- apply(W, 1, which.max)
+train_docs$nmf_cluster <- clusters
+
+# Count of documents per cluster
+table(train_docs$nmf_cluster)
+
+# Optional: visualize top words per cluster using wordcloud
+library(wordcloud)
+
+for (i in 1:k) {
+  cluster_words <- unlist(strsplit(train_docs$review[train_docs$nmf_cluster == i], " "))
+  cluster_words <- cluster_words[cluster_words %in% terms]  # keep only vocab terms
+  wordcloud(cluster_words, max.words = 50, colors = brewer.pal(8, "Dark2"))
+}
+```
+
 Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
 
 # Evaluation & model comparison
