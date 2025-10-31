@@ -105,7 +105,9 @@ split_movie_dataset <- function (movie_review, sentiment = "sentiment"){
 }
 
 data_splits <- split_movie_dataset(movie_review = movie_review)
-
+train_set <- data_splits$train_set
+val_set <- data_splits$val_set
+test_set <- data_splits$test_set
 ```
 For sentimental analysis enhancement we will further on clean the text from review column based on pre-processing methods @selectedbyourgroup.
 But first, we will change sentiment column to factor class:
