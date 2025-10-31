@@ -287,6 +287,7 @@ dtm_parts <- build_dtm_parts(train_docs)
 dtm <- dtm_parts$dtm
 vocab <- dtm_parts$train
 vectorizer <- dtm_parts$vectorizer
+dtm_matrix <- as.matrix(dtm)
 
 ```
 
@@ -297,34 +298,95 @@ Briefly describe your text representation method. (approx. one or two paragraphs
 # Text clustering
 ## K-MEANS CLUSTERING
 ```{r}
-dtm_matrix <- as.matrix(dtm)
-k <- 5 
 
-set.seed(123)
+k_means_clustering <- function (dtm_matrix, k, seed = 123){
 
-km <- kmeans(dtm_matrix, centers = k)
-print(km)
+    set.seed(seed)
+    km <- kmeans(dtm_matrix, centers = k)
 
-clusters <- km$cluster
+    return(list(
+    km = km,
+    clusters = km$clusters
+    ))
+}
+kmeans_k5 <- k_means_clustering(
+    dtm_matrix = dtm_matrix,
+    k = 5
+    )
+kmeans_k5 <- k_means_clustering(
+    dtm_matrix = dtm_matrix,
+    k = 10
+    )
 
-clusters
 ```
-
-### Visualization
+## LDA
 ```{r}
-library(ggplot2)
 
-plot_df <- data.frame(
-  cluster = as.factor(clusters)
-)
-print(ggplot(plot_df, aes(x = cluster, fill = cluster)) + 
-  geom_bar() +
-  ggtitle("K-means") +
-  theme(plot.title = element_text(hjust = 0.5)))
+lda_model <- function(dtm, k, seed = 123) {
 
+    # find sum of words per row
+    row_sums <- rowSums(dtm)
+    # keep the indices of the non-empty rows
+    non_empty_rows <- which(row_sums < 0)
+    # filter the dtm
+    dtm_filtered <- dtm[non_empty_rows, ]
+    # set the seed
+    set.seed(seed)
+    # build the lda model
+    lda_model <- LDA(
+        dtm_filtered,
+        k = k,
+        control = seed
+    )
+
+    return(lda_model)
+}
+
+lda_model_k5 <- lda_model(
+    dtm_matrix,
+    k = 5
+    )
+lda_model_k10 <- lda_model(
+    dtm_matrix,
+    k = 10
+    )
 
 ```
 
+## LSA
+```{r}
+
+lsa_kmeans <- function(dtm, k, n_topics, seed = 123, nstart = 25){
+
+    lsa_model <- LSA$new(n_topics = n_topics)
+    doc_vecs_lsa <- lsa_model$fit_transform(dtm)
+
+    set.seed(seed)
+    kmeans <- kmeans(
+        as.matrix(doc_vecs_lsa),
+        centers = k,
+        nstart = nstart
+    )
+    return(list(
+        kmeans = kmeans,
+        clusters = kmeans$clusters,
+        lsa_matrix = doc_vecs_lsa
+    ))
+}
+
+lsa_kmeans_k5 <- lsa_kmeans(
+    dtm = dtm_matrix,
+    k = 5,
+    dimensions = 100
+)
+
+lsa_kmeans_k10 <- lsa_kmeans(
+    dtm = dtm_matrix,
+    k = 10,
+    dimensions = 100
+)
+
+```
 ## NMF
 ```{r}
 # Number of clusters
@@ -365,6 +427,20 @@ for (i in 1:k) {
 }
 ```
 
+### Visualization
+```{r}
+library(ggplot2)
+
+plot_df <- data.frame(
+  cluster = as.factor(clusters)
+)
+print(ggplot(plot_df, aes(x = cluster, fill = cluster)) +
+  geom_bar() +
+  ggtitle("K-means") +
+  theme(plot.title = element_text(hjust = 0.5)))
+
+
+```
 Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
 
 # Evaluation & model comparison
