@@ -329,7 +329,7 @@ lda_model <- function(dtm, k, seed = 123) {
     # find sum of words per row
     row_sums <- rowSums(dtm)
     # keep the indices of the non-empty rows
-    non_empty_rows <- which(row_sums < 0)
+    non_empty_rows <- which(row_sums > 0)
     # filter the dtm
     dtm_filtered <- dtm[non_empty_rows, ]
     # set the seed
