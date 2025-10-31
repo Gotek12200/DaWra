@@ -78,25 +78,7 @@ movie_review %$% wordcloud(review,
 # Text pre-processing
 ### Train test split
 Before starting text pre-processing steps, we first need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
-```{r}
-# set seed for reproducibility
-set.seed(123)
 
-#first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
-train_split <- sample.split(movie_review$sentiment, SplitRatio = 0.8)
-val_split <- sample.split(movie_review$sentiment[!train_split], SplitRatio = 0.5)
-
-# save the row indices that are part of the set
-train_ids <- which(train_split)
-temp_ids <- which(!train_split)
-val_ids <- temp_ids[val_split]
-test_ids <- temp_ids[!val_split]
-
-# final datasets
-train_set <- movie_review[train_ids, ]
-test_set <- movie_review[test_ids, ]
-val_set <- movie_review[val_ids, ]
-```
 
 ```{r}
 split_movie_dataset <- function (movie_review, sentiment = "sentiment"){
@@ -277,26 +259,35 @@ test_docs <- clean_docs_data(data = data_splits$test_set, df_stopwords)
 Document_term_matrix:
 
 ```{r}
-# recombining words into reviews for the DTM
-train_docs <- clean_train %>%
-  group_by(id) %>%
-  summarize(review = paste(word, collapse = " "))
 
-# create index-tokens
-it_train <- itoken(train_docs$review, progressbar = FALSE)
+build_dtm_parts <- function(docs, term_count_min = 5){
+    # create index-tokens
+    it <- itoken(docs$review, progressbar = FALSE)
 
-# collecting unique terms
-train_vocab <- create_vocabulary(it_train)
+    # collecting unique terms
+    vocab <- create_vocabulary(it)
 
-# filtering infrequent terms
-train_vocab <- prune_vocabulary(train_vocab, term_count_min=5)
+    # filtering infrequent terms
+    vocab <- prune_vocabulary(vocab, term_count_min)
 
-vectorizer = vocab_vectorizer(train_vocab)
+    # creating the vectorizer
+    vectorizer <- vocab_vectorizer(vocab)
 
-# creating document term matrix
-dtm_train = create_dtm(it_train, vectorizer)
+    # creating document term matrix
+    dtm <- create_dtm(it, vectorizer)
 
-dtm_dense <- as.matrix(dtm_train)
+    return(list(
+            dtm = dtm,
+            vocab = vocab,
+            vectorizer = vectorizer
+            ))
+}
+
+dtm_parts <- build_dtm_parts(train_docs)
+dtm <- dtm_parts$dtm
+vocab <- dtm_parts$train
+vectorizer <- dtm_parts$vectorizer
+
 ```
 
 # Text representaion
@@ -306,7 +297,7 @@ Briefly describe your text representation method. (approx. one or two paragraphs
 # Text clustering
 ## K-MEANS CLUSTERING
 ```{r}
-dtm_matrix <- as.matrix(dtm_train)
+dtm_matrix <- as.matrix(dtm)
 k <- 5 
 
 set.seed(123)
@@ -340,7 +331,7 @@ print(ggplot(plot_df, aes(x = cluster, fill = cluster)) +
 k <- 5
 
 # Running the model
-nmf_res <- nmf(dtm_dense, k = k, seed = 123)
+nmf_res <- nmf(dtm_matrix, k = k, seed = 123)
 
 # Document topic matrix
 W <- nmf_res$w
