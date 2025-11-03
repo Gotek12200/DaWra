@@ -426,15 +426,13 @@ results
 
 ```
 Among all models, LDA with 5 topics gives the best overall clustering results.
-It has a strong internal validity (Silhouette = 0.61, DB = 1.20), meaning its clusters are both well-defined and clearly
+It has a strong internal validity (Silhouette = 0.62, DB = 1.16), meaning its clusters are both well-defined and clearly
 separated from each other.
 
-NMF (k=10) also performs quite well (Silhouette = 0.56, DB = 9.57). This suggests that while the model captures
-meaningful structure, the clusters might still overlap a bit — they’re compact internally but not as well separated.
-NMF (k=5), on the other hand, shows weaker separation (DB = 29.06), probably because too few topics make it harder to
-capture all the variety in the data.
+NMF (k=5) also performs quite well (Silhouette = 0.64, DB = 6.34). This suggests that while the model captures
+meaningful structure, the clusters might still overlap a bit. they’re compact internally but not as well separated.
 
-LDA with 10 topics performs slightly worse than its k=5 version (Silhouette = 0.50, DB = 1.51), likely because
+LDA with 10 topics performs slightly worse than its k=5 version (Silhouette = 0.50, DB = 1.42), likely because
 increasing the number of topics causes some splitting of coherent themes.
 Meanwhile, K-Means and LSA + K-Means models show very low silhouette scores and high DB values, which means their
 clusters aren’t clearly separated and don’t capture the underlying semantics of the text well.
