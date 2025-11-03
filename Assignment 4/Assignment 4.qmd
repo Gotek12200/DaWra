@@ -72,11 +72,6 @@ table(movie_review$sentiment) #see the distribution of negative and positive rev
 
 # Data description
 Based on the dataset "movie_review" embedded in text2vec package, we see the selection of positive and negative reviews of movie viewers, relatively evenly distributed in the dataset (2483 negative and 2517 positive reviews) denoted with score 1 if the IMDB rating was >= 7 or 0 if rating is <5 accordingly.
-
-
-
-Describe the data and use a visualization to support your story. (approx. one or two paragraphs
-
 ```{r}
 #| label: eda visualization
 #| warning: false
@@ -93,7 +88,6 @@ movie_review %$% wordcloud(review,
 # Text pre-processing
 ### Train test split
 Before starting text pre-processing steps, we first need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
-
 
 ```{r}
 split_movie_dataset <- function (movie_review, sentiment = "sentiment"){
@@ -189,7 +183,7 @@ clean_train %>%
   labs(x = "Frequency", y = "Words") +
   theme_classic()
 ```
-There are still some stop words left, and removing them all manually might be time-consuming. Let's instead use the dataset smart_stopwords from library(stopwords) and modify it with those words that we want to use in the analysis(for example, leaving negative particles to see the negative review sensitivity). We will also add words to the "stoplist" that don't make sense for our analysis or neutral movie words that don't have sentimental signal:
+There are still some stop words left, and removing them all manually might be time-consuming. Let's instead use the dataset `smart_stopwords` from `library(stopwords)` and modify it with those words that we want to use in the analysis(for example, leaving negative particles to see the negative review sensitivity). We will also add words to the "stoplist" that don't make sense for our analysis or neutral movie words that don't have sentimental signal:
 
 ```{r}
 smart_stopwords <- stopwords(source = "smart")
@@ -278,8 +272,10 @@ test_docs <- clean_docs_data(data = data_splits$test_set, df_stopwords)
 
 ```
 
+# Text representaion
+For the text representation method we selected DTM (Document-Term Matrix). In a document term matrix the rows correspond to the documents in the corpus (in our case the movie reviews) and the columns correspond to the terms in the documents (in our case the cleaned words of the reviews). The cell values are the frequency of the given word in the given document.The resulting matrix is typically very sparse, since most words appear only in a few documents. 
 
-Document_term_matrix:
+Before creating the DTM, we also filter out infrequent terms using `term_count_min=5`, which removes words that occur fewer than 5 times in the entire corpus. This reduces noise and makes the DTM faster to process.
 
 ```{r}
 
@@ -314,12 +310,9 @@ dtm_matrix <- as.matrix(dtm)
 
 ```
 
-# Text representaion
-
-Briefly describe your text representation method. (approx. one or two paragraphs)
-
 # Text clustering
 ## K-MEANS CLUSTERING
+K- means clustering  is an unsupervised machine learning algorithm and shows which data points are similar based to their distance. The closer together are the data points the more similar they are. The clusters are created by assigning each data point to the nearest centroid, then iteratively the centroids are calculated again until the clusters stabilize.
 ```{r}
 
 k_means_clustering <- function (dtm_matrix, k, seed = 123){
@@ -408,60 +401,26 @@ lsa_kmeans_k10 <- lsa_kmeans(
 
 ```
 ## NMF
-```{r}
-# Number of clusters
-k <- 5
+Non-Negative Matrix Factorization works by decomposing a matrix into two smaller matrices W and H, so that W * H approximates the original matrix. In our case, W will be the document-topic matrix (rows will be the documents and columns are the "topics" or clusters), and H will be the topic-term matrix (rows the topics and columns the words). Each entry in W indicates the strength of association between a document and a topic and each entry in H indicates the importance of a term for a given topic.
 
-# Running the model
-nmf_res <- nmf(dtm_matrix, k = k, seed = 123)
+Since all the values are non-negative, NMF produces representations that work with additions (for instance, topics are combinations of words), so the result is easy to interpret.
+```{r}
+# Running the models
+nmf_res_5 <- nmf(dtm_matrix, k = 5, seed = 123)
+nmf_res_10 <- nmf(dtm_matrix, k = 10, seed = 123)
 
 # Document topic matrix
-W <- nmf_res$w
+W_5 <- nmf_res_5$w
+W_10 <- nmf_res_10$w
 
 # Topic-term matrix
-H <- nmf_res$h
-
-# Inspect top words per topic
-top_n_words <- 10
-terms <- colnames(dtm_matrix)
-
-for (i in 1:k) {
-  topic_terms <- terms[order(as.numeric(H[i, ]), decreasing = TRUE)[1:top_n_words]]
-  cat(paste0("Topic ", i, ": ", paste(topic_terms, collapse = ", "), "\n"))
-}
+H_5 <- nmf_res_5$h
+H_10 <- nmf_res_10$h
 
 # Assigning each document to the topic with the highest weight
-clusters <- apply(W, 1, which.max)
-train_docs$nmf_cluster <- clusters
-
-# Count of documents per cluster
-table(train_docs$nmf_cluster)
-
-# Optional: visualize top words per cluster using wordcloud
-library(wordcloud)
-
-for (i in 1:k) {
-  cluster_words <- unlist(strsplit(train_docs$review[train_docs$nmf_cluster == i], " "))
-  cluster_words <- cluster_words[cluster_words %in% terms]  # keep only vocab terms
-  wordcloud(cluster_words, max.words = 50, colors = brewer.pal(8, "Dark2"))
-}
+nmf5_clusters <- apply(W_5, 1, which.max)
+nmf10_clusters <- apply(W_10, 1, which.max)
 ```
-
-### Visualization
-```{r}
-library(ggplot2)
-
-plot_df <- data.frame(
-  cluster = as.factor(clusters)
-)
-print(ggplot(plot_df, aes(x = cluster, fill = cluster)) +
-  geom_bar() +
-  ggtitle("K-means") +
-  theme(plot.title = element_text(hjust = 0.5)))
-
-
-```
-Briefly describe which models you compare to perform clustering. (approx. two or three paragraphs)
 
 # Evaluation & model comparison
 
@@ -502,9 +461,10 @@ lda10_clusters <- max.col(doc_topic10, ties.method = "first")
 lda5_centers   <- centroids_from_labels(doc_topic5,  lda5_clusters)
 lda10_centers  <- centroids_from_labels(doc_topic10, lda10_clusters)
 
-X_nmf  <- W
-nmf5_clusters <- train_docs$nmf_cluster
-nmf5_centers  <- centroids_from_labels(X_nmf, nmf5_clusters)
+X_nmf5 <- W_5
+X_nmf10 <- W_10
+nmf5_centers  <- centroids_from_labels(X_nmf5, nmf5_clusters)
+nmf10_centers <- centroids_from_labels(X_nmf10, nmf10_clusters)
 
 # silhouette scores (higher = better)
 sil_km5   <- sil_medoid_mean(X_counts, km5_centers)
@@ -513,7 +473,8 @@ sil_lsa5  <- sil_medoid_mean(X_lsa5,  lsa5_centers)
 sil_lsa10 <- sil_medoid_mean(X_lsa10, lsa10_centers)
 sil_lda5  <- sil_medoid_mean(doc_topic5,  lda5_centers)
 sil_lda10 <- sil_medoid_mean(doc_topic10, lda10_centers)
-sil_nmf5  <- sil_medoid_mean(X_nmf, nmf5_centers)
+sil_nmf5  <- sil_medoid_mean(X_nmf5, nmf5_centers)
+sil_nmf10 <- sil_medoid_mean(X_nmf10, nmf10_centers)
 
 # DB index (lower = better)
 db_km5   <- index.DB(X_counts, km5_clusters,  centrotypes = "centroids")$DB
@@ -522,22 +483,23 @@ db_lsa5  <- index.DB(X_lsa5,  lsa5_clusters,  centrotypes = "centroids")$DB
 db_lsa10 <- index.DB(X_lsa10, lsa10_clusters, centrotypes = "centroids")$DB
 db_lda5  <- index.DB(doc_topic5,  lda5_clusters,  centrotypes = "centroids")$DB
 db_lda10 <- index.DB(doc_topic10, lda10_clusters, centrotypes = "centroids")$DB
-db_nmf5  <- index.DB(X_nmf, nmf5_clusters, centrotypes = "centroids")$DB
+db_nmf5  <- index.DB(X_nmf5, nmf5_clusters, centrotypes = "centroids")$DB
+db_nmf10 <- index.DB(X_nmf10, nmf10_clusters, centrotypes = "centroids")$DB
 
 # final results table
 results <- tibble::tibble(
   model = c("K-Means (k=5)", "K-Means (k=10)",
             "LSA + K-Means (k=5)", "LSA + K-Means (k=10)",
             "LDA (k=5)", "LDA (k=10)",
-            "NMF (k=5)"),
+            "NMF (k=5)", "NMF (k=10)"),
   silhouette = c(sil_km5, sil_km10,
                  sil_lsa5, sil_lsa10,
                  sil_lda5, sil_lda10,
-                 sil_nmf5),
+                 sil_nmf5, sil_nmf10),
   db_index   = c(db_km5, db_km10,
                  db_lsa5, db_lsa10,
                  db_lda5, db_lda10,
-                 db_nmf5)
+                 db_nmf5, db_nmf10)
 )
 
 results
@@ -558,4 +520,4 @@ Write down what each team member contributed to the project.
 
 - Author One: a, b, c
 - Author Two: b, c, d
-- Author Three: a, b, d
+- Mate Csikos-Nagy: DTM matrix creation, NMF model setup
