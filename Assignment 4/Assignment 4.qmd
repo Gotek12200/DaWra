@@ -170,9 +170,9 @@ build_dtm_parts <- function(docs, term_count_min = 5){
     # creating document term matrix
     dtm <- create_dtm(it, vectorizer)
 
-    row_sums <- Matrix::rowSums(dtm_full)
+    row_sums <- Matrix::rowSums(dtm)
     non_empty_rows <- which(row_sums > 0)
-    dtm_filtered <- dtm_full[non_empty_rows, ]
+    dtm_filtered <- dtm[non_empty_rows, ]
 
     return(list(
             dtm = dtm,
@@ -187,6 +187,7 @@ dtm <- dtm_parts$dtm
 vocab <- dtm_parts$train
 vectorizer <- dtm_parts$vectorizer
 dtm_filtered <- dtm_parts$dtm_filtered
+dtm_matrix <- as.matrix(dtm)
 
 ```
 
@@ -197,10 +198,10 @@ distance. The closer together are the data points the more similar they are. The
 data point to the nearest centroid, then iteratively the centroids are calculated again until the clusters stabilize.
 ```{r}
 
-k_means_clustering <- function (dtm_filtered, k, seed = 123){
+k_means_clustering <- function (dtm_matrix, k, seed = 123){
 
     set.seed(seed)
-    km <- kmeans(dtm_filtered, centers = k)
+    km <- kmeans(dtm_matrix, centers = k)
 
     return(list(
     km = km,
@@ -208,11 +209,11 @@ k_means_clustering <- function (dtm_filtered, k, seed = 123){
     ))
 }
 kmeans_k5 <- k_means_clustering(
-    dtm_filtered = dtm_filtered,
+    dtm_matrix = dtm_matrix,
     k = 5
     )
 kmeans_k10 <- k_means_clustering(
-    dtm_filtered = dtm_filtered,
+    dtm_matrix = dtm_matrix,
     k = 10
     )
 
@@ -346,7 +347,7 @@ centroids_from_labels <- function(X, clusters) {
 # using the models we already trained
 
 # K-Means was done on the DTM (count-based text representation)
-X_counts <- dtm_filtered
+X_counts <- dtm_matrix
 km5_clusters  <- kmeans_k5$km$cluster     # cluster labels for k = 5
 km10_clusters <- kmeans_k10$km$cluster    # cluster labels for k = 10
 km5_centers   <- kmeans_k5$km$centers     # cluster centers
