@@ -53,7 +53,8 @@ library(cluster)
 library(clusterSim) 
 library(Silhouette)
 library(dplyr)
-
+library(Matrix)
+library(RcppML)
 ```
 
 ```{r}
@@ -275,6 +276,7 @@ test_docs <- clean_docs_data(data = data_splits$test_set, df_stopwords)
 For the text representation method we selected DTM (Document-Term Matrix). In a document term matrix the rows correspond to the documents in the corpus (in our case the movie reviews) and the columns correspond to the terms in the documents (in our case the cleaned words of the reviews). The cell values are the frequency of the given word in the given document.The resulting matrix is typically very sparse, since most words appear only in a few documents. 
 
 Before creating the DTM, we also filter out infrequent terms using `term_count_min=5`, which removes words that occur fewer than 5 times in the entire corpus. This reduces noise and makes the DTM faster to process.
+after creating the DTM we filter out all the empty rows to create a filtered sparse matrix which will improve time complexity and
 
 ```{r}
 
@@ -294,10 +296,15 @@ build_dtm_parts <- function(docs, term_count_min = 5){
     # creating document term matrix
     dtm <- create_dtm(it, vectorizer)
 
+    row_sums <- Matrix::rowSums(dtm_full)
+    non_empty_rows <- which(row_sums > 0)
+    dtm_filtered <- dtm_full[non_empty_rows, ]
+
     return(list(
             dtm = dtm,
             vocab = vocab,
-            vectorizer = vectorizer
+            vectorizer = vectorizer,
+            dtm_filtered = dtm_filtered
             ))
 }
 
@@ -306,6 +313,7 @@ dtm <- dtm_parts$dtm
 vocab <- dtm_parts$train
 vectorizer <- dtm_parts$vectorizer
 dtm_matrix <- as.matrix(dtm)
+dtm_filtered <- dtm_parts$dtm_filtered
 
 ```
 
@@ -314,27 +322,31 @@ dtm_matrix <- as.matrix(dtm)
 K- means clustering  is an unsupervised machine learning algorithm and shows which data points are similar based to their distance. The closer together are the data points the more similar they are. The clusters are created by assigning each data point to the nearest centroid, then iteratively the centroids are calculated again until the clusters stabilize.
 ```{r}
 
-k_means_clustering <- function (dtm_matrix, k, seed = 123){
+k_means_clustering <- function (dtm, k, seed = 123){
 
     set.seed(seed)
-    km <- kmeans(dtm_matrix, centers = k)
+    km <- kmeans(dtm, centers = k)
 
     return(list(
     km = km,
-    clusters = km$clusters
+    clusters = km$cluster
     ))
 }
 kmeans_k5 <- k_means_clustering(
-    dtm_matrix = dtm_matrix,
+    dtm = dtm_filtered,
     k = 5
     )
 kmeans_k10 <- k_means_clustering(
-    dtm_matrix = dtm_matrix,
+    dtm = dtm_filtered,
     k = 10
     )
 
 ```
-## LSA
+## LSA + kmeans
+looking at the data we can see that we have a very high dimensionality. kmeans clustering usually performs very bad on a DTM because of the curse of dimensionality. LSA will solve this problem by dimensionality reduction.
+It uses a method called Singular Value Decomposition to reduce the dimensions to, in our case n_topics = 100, "latent concepts". after we have reduced the data to a dense matrix that sees the underlying semantics of the reviews we should be able to successfully perform k-means clustering.
+
+
 ```{r}
 
 lsa_kmeans <- function(dtm, k, n_topics, seed = 123, nstart = 25){
@@ -356,13 +368,13 @@ lsa_kmeans <- function(dtm, k, n_topics, seed = 123, nstart = 25){
 }
 
 lsa_kmeans_k5 <- lsa_kmeans(
-  dtm = dtm_matrix,
+  dtm = dtm_filtered,
   k = 5,
   n_topics = 100
 )
 
 lsa_kmeans_k10 <- lsa_kmeans(
-  dtm = dtm_matrix,
+  dtm = dtm_filtered,
   k = 10,
   n_topics = 100
 )
@@ -374,12 +386,10 @@ lsa_kmeans_k10 <- lsa_kmeans(
 
 
 lda_model <- function(dtm, k, seed = 123) {
-  row_sums <- Matrix::rowSums(dtm)
-  non_empty_rows <- which(row_sums > 0)
-  dtm_filtered <- dtm[non_empty_rows, ]
+
   set.seed(seed)
   lda_model <- LDA(
-    dtm_filtered,
+    dtm,
     k = k,
     method = "Gibbs",
     control = list(seed = seed)
@@ -389,11 +399,11 @@ lda_model <- function(dtm, k, seed = 123) {
 
 
 lda_model_k5 <- lda_model(
-    dtm,
+    dtm = dtm_filtered,
     k = 5
     )
 lda_model_k10 <- lda_model(
-    dtm,
+    dtm = dtm_filtered,
     k = 10
     )
 
@@ -404,9 +414,9 @@ Non-Negative Matrix Factorization works by decomposing a matrix into two smaller
 
 Since all the values are non-negative, NMF produces representations that work with additions (for instance, topics are combinations of words), so the result is easy to interpret.
 ```{r}
-# Running the models
-nmf_res_5 <- nmf(dtm_matrix, k = 5, seed = 123)
-nmf_res_10 <- nmf(dtm_matrix, k = 10, seed = 123)
+# Running the models using a method that is able to take a sparse matrix which will also speed up the process
+nmf_res_5 <- RcppML::nmf(dtm_filtered, k = 5, seed = 123)
+nmf_res_10 <- RcppML::nmf(dtm_filtered, k = 10, seed = 123)
 
 # Document topic matrix
 W_5 <- nmf_res_5$w
@@ -420,22 +430,6 @@ H_10 <- nmf_res_10$h
 nmf5_clusters <- apply(W_5, 1, which.max)
 nmf10_clusters <- apply(W_10, 1, which.max)
 ```
-
-### Visualization
-```{r}
-library(ggplot2)
-
-plot_df <- data.frame(
-  cluster = as.factor(clusters)
-)
-print(ggplot(plot_df, aes(x = cluster, fill = cluster)) +
-  geom_bar() +
-  ggtitle("K-means") +
-  theme(plot.title = element_text(hjust = 0.5)))
-
-
-```
-
 # Evaluation & model comparison
 
 To compare the clustering methods, we used two internal validation metrics: the Silhouette score and the Davies–Bouldin Index (DB Index). These metrics evaluate how well the data points fit within their assigned clusters and how clearly the clusters are separated, without relying on any external labels. The Silhouette score measures how similar each document is to its own cluster compared to other clusters, while the DB Index captures how compact and distinct the clusters are from one another.
@@ -461,7 +455,7 @@ centroids_from_labels <- function(X, clusters) {
 # using the models we already trained
 
 # K-Means was done on the DTM (count-based text representation)
-X_counts <- dtm_matrix
+X_counts <- dtm_filtered
 km5_clusters  <- kmeans_k5$km$cluster     # cluster labels for k = 5
 km10_clusters <- kmeans_k10$km$cluster    # cluster labels for k = 10
 km5_centers   <- kmeans_k5$km$centers     # cluster centers
@@ -488,11 +482,10 @@ lda10_centers  <- centroids_from_labels(doc_topic10, lda10_clusters)
 
 
 # NMF: get cluster assignments and centroids from topic weights
-X_nmf         <- as.matrix(W)
-nmf5_clusters <- max.col(X_nmf, ties.method = "first")
-nmf5_centers  <- as.matrix(centroids_from_labels(X_nmf, nmf5_clusters))
 X_nmf5 <- W_5
 X_nmf10 <- W_10
+nmf5_clusters <- apply(X_nmf5, 1, which.max)
+nmf10_clusters <- apply(X_nmf10, 1, which.max)
 nmf5_centers  <- centroids_from_labels(X_nmf5, nmf5_clusters)
 nmf10_centers <- centroids_from_labels(X_nmf10, nmf10_clusters)
 
