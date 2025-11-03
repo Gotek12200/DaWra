@@ -219,11 +219,8 @@ kmeans_k10 <- k_means_clustering(
 
 ```
 ## LSA + kmeans
-looking at the data we can see that we have a very high dimensionality. kmeans clustering usually performs very bad on a
-DTM because of the curse of dimensionality. LSA will solve this problem by dimensionality reduction.
-It uses a method called Singular Value Decomposition to reduce the dimensions to, in our case n_topics = 100, "latent
-concepts". after we have reduced the data to a dense matrix that sees the underlying semantics of the reviews we should
-be able to successfully perform k-means clustering.
+looking at the data we can see that we have a very high dimensionality. kmeans clustering usually performs very bad on a DTM because of the curse of dimensionality. LSA will solve this problem by dimensionality reduction.
+It uses a method called Singular Value Decomposition to reduce the dimensions to, in our case n_topics = 100, "latent concepts". after we have reduced the data to a dense matrix that sees the underlying semantics of the reviews we should be able to successfully perform k-means clustering.
 
 
 ```{r}
@@ -261,7 +258,7 @@ lsa_kmeans_k10 <- lsa_kmeans(
 ```
 
 ## LDA
-LDA is probabilistic generative model used for topic modelling. it assumes each document in the dtm is a mixture of latent topics, and each topic is a probability distribution over the entire vocabulary. it infers this structure by analyzing word co-occurences. we are applying LDA to our "dtm_filtered" using gibbs sampling, this takes a bit longer but it is more likely to find the best topics in our data because it is a stochastic search and not a deterministic search.
+LDA is probabilistic generative model used for topic modelling. it assumes each document in the dtm is a mixture of latent topics, and each topic is a probability distribution over the entire vocabulary. it infers this structure by analyzing word co-occurrences. we are applying LDA to our "dtm_filtered" using gibbs sampling, this takes a bit longer, but it is more likely to find the best topics in our data because it is a stochastic search and not a deterministic search.
 
 ```{r}
 
