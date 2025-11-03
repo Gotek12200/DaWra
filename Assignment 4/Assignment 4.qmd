@@ -34,7 +34,6 @@ library(text2vec)
 library(wordcloud)
 library(magrittr)
 library(tm)
-library(dplyr)
 library(tidyverse)
 library(tidytext)
 library(stringr)
@@ -49,6 +48,12 @@ library(mclust)
 library(tibble) 
 library(dplyr)
 library(text2vec)
+library(proxyC)     
+library(cluster)   
+library(clusterSim) 
+library(Silhouette)
+library(dplyr)
+
 ```
 
 ```{r}
@@ -220,10 +225,22 @@ clean_train %>%
 smart_stopwords <- stopwords(source = "smart")
 stop_words <- tibble(word=smart_stopwords)
 df_stopwords <- stop_words %>%
-      filter(!word %in% c("neither", "never", "no", "nobody", "non", "none", "not", "nothing", "nowhere", "awfully", "best", "better", "cannot", "least", "less", "like", "little", "serious", "thanks", "welcome", "want", "willing", "will", "wish", "without")) %>%
-      rbind(tibble(word = c("br", "made", "make", "movie", "film", "films", "movies", "story", "plot",
-      "character", "characters", "people", "show", "watch",
-      "life", "scene", "end", "man", "time")))
+  rbind(tibble(word = c(
+    # --- Woorden van vorige iteraties ---
+    "br", "made", "make", "movie", "film", "films", "movies", "story",
+    "plot", "character", "characters", "people", "show", "watch",
+    "life", "scene", "end", "man", "time", "years", "world", "book",
+    "good", "bad", "like", "great", "best", "better", "little", "pretty",
+    "acting", "actors", "love", "funny", "watching", "real", "horror",
+    "thing", "things", "lot", "work", "scenes", "part", "find", "back",
+    "role", "big", "original", "cast", "10", "give", "action", "minutes",
+    "thought", "point", "fact", "making", "long", "war", "family",
+    "young", "series", "performance", "makes", "feel", "woman",
+    "excellent", "times", "girl", "played", "comedy", "music",
+    "director", "actor", "left", "guy", "father", "american", "hard", "play",
+    "2", "game", "night", "1", "match", "kind", "house", "bit", "true",
+    "script", "men", "wife", "day", "stewart", "shows"
+  )))
 
 clean_docs_data <- function (data, df_stopwords){
 
@@ -319,7 +336,7 @@ kmeans_k5 <- k_means_clustering(
     dtm_matrix = dtm_matrix,
     k = 5
     )
-kmeans_k5 <- k_means_clustering(
+kmeans_k10 <- k_means_clustering(
     dtm_matrix = dtm_matrix,
     k = 10
     )
@@ -448,170 +465,91 @@ Briefly describe which models you compare to perform clustering. (approx. two or
 
 # Evaluation & model comparison
 
-To compare the clustering methods, we used four metrics: Silhouette, Davies–Bouldin Index (DB Index), Adjusted Rand Index (ARI), and Purity. Silhouette and DB Index are internal metrics, which tell us how well the data points fit within their assigned clusters and how clearly the clusters are separated. In contrast, ARI and Purity are external metrics, which compare the clustering results to the actual sentiment labels. ARI checks how closely the clusters match the real labels (adjusted for random chance), while Purity measures how many reviews in each cluster share the same sentiment.
+To compare the clustering methods, we used two internal validation metrics: the Silhouette score and the Davies–Bouldin Index (DB Index). These metrics evaluate how well the data points fit within their assigned clusters and how clearly the clusters are separated, without relying on any external labels. The Silhouette score measures how similar each document is to its own cluster compared to other clusters, while the DB Index captures how compact and distinct the clusters are from one another.
 
-We chose these metrics because each one captures a different aspect of clustering quality. The Silhouette score shows how well-separated and consistent the clusters are, making it a good overall measure of cluster structure. The DB Index was added as a second internal metric because it focuses on how compact and distinct the clusters are, helping confirm the Silhouette results. The ARI was chosen since we already have true sentiment labels, and it tells us how closely the clusters match those labels beyond random chance. Finally, we used Purity because it’s easy to interpret, it shows how clearly each cluster corresponds to one main sentiment (positive or negative). Together, these four metrics give a balanced view of both the clustering performance and its real-world meaning.
+We chose these metrics because  they capture a different aspect of clustering quality. The Silhouette score shows how well-separated and consistent the clusters are, making it a good overall measure of cluster structure. The DB Index was added as a second internal metric because it focuses on how compact and distinct the clusters are, helping confirm the Silhouette results.
 
 ```{r}
-# purity: for each cluster, take the most common label and average over all docs
-purity <- function(true, pred){
-  tab <- table(true, pred)
-  sum(apply(tab, 2, max)) / length(true)
+# helper functions
+sil_medoid_mean <- function(X, centers) {
+  D_obs_centers <- proxy::dist(X, centers, method = "cosine")
+  Silhouette(D_obs_centers, method = "medoid")$sil_width |> mean(na.rm = TRUE)
 }
 
-# mean silhouette across docs (silhouette() wants a distance matrix)
-sil_mean <- function(cluster_labels, D){
-  s <- silhouette(cluster_labels, D)
-  mean(s[, 3])  # column 3 is the actual silhouette value
+centroids_from_labels <- function(X, clusters) {
+  cs <- sort(unique(clusters))
+  do.call(rbind, lapply(cs, function(c) colMeans(X[clusters == c, , drop = FALSE])))
 }
 
+# use the models we  trained
+X_counts <- dtm_matrix
+km5_clusters  <- kmeans_k5$km$cluster
+km10_clusters <- kmeans_k10$km$cluster
+km5_centers   <- kmeans_k5$km$centers
+km10_centers  <- kmeans_k10$km$centers
 
-# note: everything downstream assumes train_docs order == dtm row order
-if (!("id" %in% names(train_set))) train_set <- train_set %>% mutate(id = dplyr::row_number())
+X_lsa5  <- as.matrix(lsa_kmeans_k5$lsa_matrix)
+X_lsa10 <- as.matrix(lsa_kmeans_k10$lsa_matrix)
+lsa5_clusters <- lsa_kmeans_k5$kmeans$cluster
+lsa10_clusters <- lsa_kmeans_k10$kmeans$cluster
+lsa5_centers  <- lsa_kmeans_k5$kmeans$centers
+lsa10_centers <- lsa_kmeans_k10$kmeans$centers
 
-train_tmp <- dplyr::select(train_set, id, sentiment)
-train_tmp <- dplyr::filter(train_tmp, id %in% train_docs$id)
-train_tmp <- dplyr::arrange(train_tmp, match(id, train_docs$id))
-labels <- dplyr::pull(train_tmp, sentiment)
-
-# sanity check: labels length should match number of rows in dtm
-stopifnot(length(labels) == nrow(dtm_matrix))
-
-
-# K-Means: we ran on counts (dtm_matrix), so use cosine on that
-D_counts <- proxy::dist(dtm_matrix, method = "cosine")
-
-# LSA: use the reduced doc vectors we saved
-D_lsa5  <- proxy::dist(as.matrix(lsa_kmeans_k5$lsa_matrix),  method = "cosine")
-D_lsa10 <- proxy::dist(as.matrix(lsa_kmeans_k10$lsa_matrix), method = "cosine")
-
-# LDA: distances in topic-proportion space (more fair than raw words)
-non_empty_rows <- which(Matrix::rowSums(dtm) > 0)  # LDA dropped empty docs
-labels_lda <- labels[non_empty_rows]               # line up labels to those docs
 doc_topic5  <- posterior(lda_model_k5)$topics
 doc_topic10 <- posterior(lda_model_k10)$topics
-D_lda5  <- proxy::dist(doc_topic5,  method = "cosine")
-D_lda10 <- proxy::dist(doc_topic10, method = "cosine")
-stopifnot(length(labels_lda) == nrow(doc_topic5),
-          length(labels_lda) == nrow(doc_topic10))
-
-# NMF: distances in W (doc-topic) space as well
-D_nmf5 <- proxy::dist(W, method = "cosine")
-
-
-# K-Means: note our helper stored the model in $km; labels are $km$cluster
-# (we only have k=10 here because the k=5 object got overwritten earlier)
-km10_clusters <- kmeans_k5$km$cluster
-
-# LSA + K-Means: clusters are inside the returned kmeans object
-lsa5_clusters  <- lsa_kmeans_k5$kmeans$cluster
-lsa10_clusters <- lsa_kmeans_k10$kmeans$cluster
-
-# LDA: MAP topic per doc = the argmax over topic probabilities
 lda5_clusters  <- max.col(doc_topic5,  ties.method = "first")
 lda10_clusters <- max.col(doc_topic10, ties.method = "first")
+lda5_centers   <- centroids_from_labels(doc_topic5,  lda5_clusters)
+lda10_centers  <- centroids_from_labels(doc_topic10, lda10_clusters)
 
-# NMF (k=5): we saved the hard cluster per doc earlier
+X_nmf  <- W
 nmf5_clusters <- train_docs$nmf_cluster
+nmf5_centers  <- centroids_from_labels(X_nmf, nmf5_clusters)
 
+# silhouette scores (higher = better)
+sil_km5   <- sil_medoid_mean(X_counts, km5_centers)
+sil_km10  <- sil_medoid_mean(X_counts, km10_centers)
+sil_lsa5  <- sil_medoid_mean(X_lsa5,  lsa5_centers)
+sil_lsa10 <- sil_medoid_mean(X_lsa10, lsa10_centers)
+sil_lda5  <- sil_medoid_mean(doc_topic5,  lda5_centers)
+sil_lda10 <- sil_medoid_mean(doc_topic10, lda10_centers)
+sil_nmf5  <- sil_medoid_mean(X_nmf, nmf5_centers)
 
-# higher silhouette is better, lower DB index is better
-sil_km10 <- sil_mean(km10_clusters, D_counts)
-db_km10  <- index.DB(dtm_matrix, km10_clusters, centrotypes = "centroids")$DB
+# DB index (lower = better)
+db_km5   <- index.DB(X_counts, km5_clusters,  centrotypes = "centroids")$DB
+db_km10  <- index.DB(X_counts, km10_clusters, centrotypes = "centroids")$DB
+db_lsa5  <- index.DB(X_lsa5,  lsa5_clusters,  centrotypes = "centroids")$DB
+db_lsa10 <- index.DB(X_lsa10, lsa10_clusters, centrotypes = "centroids")$DB
+db_lda5  <- index.DB(doc_topic5,  lda5_clusters,  centrotypes = "centroids")$DB
+db_lda10 <- index.DB(doc_topic10, lda10_clusters, centrotypes = "centroids")$DB
+db_nmf5  <- index.DB(X_nmf, nmf5_clusters, centrotypes = "centroids")$DB
 
-sil_lsa5  <- sil_mean(lsa5_clusters,  D_lsa5)
-sil_lsa10 <- sil_mean(lsa10_clusters, D_lsa10)
-db_lsa5   <- index.DB(as.matrix(lsa_kmeans_k5$lsa_matrix),  lsa5_clusters,  centrotypes = "centroids")$DB
-db_lsa10  <- index.DB(as.matrix(lsa_kmeans_k10$lsa_matrix), lsa10_clusters, centrotypes = "centroids")$DB
-
-sil_lda5  <- sil_mean(lda5_clusters,  D_lda5)
-sil_lda10 <- sil_mean(lda10_clusters, D_lda10)
-db_lda5   <- index.DB(doc_topic5,  lda5_clusters,  centrotypes = "centroids")$DB
-db_lda10  <- index.DB(doc_topic10, lda10_clusters, centrotypes = "centroids")$DB
-
-sil_nmf5 <- sil_mean(nmf5_clusters, D_nmf5)
-db_nmf5  <- index.DB(W, nmf5_clusters, centrotypes = "centroids")$DB
-
-
-# ARI is “how close are we to the real labels, beyond random chance?”
-# Purity is “within each cluster, do most reviews share the same label?”
-ari_km10 <- adjustedRandIndex(labels, km10_clusters)
-pur_km10 <- purity(labels, km10_clusters)
-
-ari_lsa5  <- adjustedRandIndex(labels, lsa5_clusters)
-ari_lsa10 <- adjustedRandIndex(labels, lsa10_clusters)
-pur_lsa5  <- purity(labels, lsa5_clusters)
-pur_lsa10 <- purity(labels, lsa10_clusters)
-
-ari_lda5  <- adjustedRandIndex(labels_lda, lda5_clusters)
-ari_lda10 <- adjustedRandIndex(labels_lda, lda10_clusters)
-pur_lda5  <- purity(labels_lda, lda5_clusters)
-pur_lda10 <- purity(labels_lda, lda10_clusters)
-
-ari_nmf5 <- adjustedRandIndex(labels, nmf5_clusters)
-pur_nmf5 <- purity(labels, nmf5_clusters)
-
-
+# final results table
 results <- tibble::tibble(
-  model = c("K-Means (k=10)",
+  model = c("K-Means (k=5)", "K-Means (k=10)",
             "LSA + K-Means (k=5)", "LSA + K-Means (k=10)",
             "LDA (k=5)", "LDA (k=10)",
             "NMF (k=5)"),
-  silhouette = c(sil_km10,
+  silhouette = c(sil_km5, sil_km10,
                  sil_lsa5, sil_lsa10,
                  sil_lda5, sil_lda10,
                  sil_nmf5),
-  db_index   = c(db_km10,
+  db_index   = c(db_km5, db_km10,
                  db_lsa5, db_lsa10,
                  db_lda5, db_lda10,
-                 db_nmf5),
-  ARI        = c(ari_km10,
-                 ari_lsa5, ari_lsa10,
-                 ari_lda5, ari_lda10,
-                 ari_nmf5),
-  purity     = c(pur_km10,
-                 pur_lsa5, pur_lsa10,
-                 pur_lda5, pur_lda10,
-                 pur_nmf5)
-) %>% arrange(desc(ARI))
+                 db_nmf5)
+)
 
 results
 
-```
-
-
-```{r}
-# order models by ARI (best at top/left)
-results_plot <- results %>%
-  mutate(model = reorder(model, ARI))
-
-# long format for faceting
-results_long <- results_plot %>%
-  pivot_longer(cols = c(silhouette, db_index, ARI, purity),
-               names_to = "metric", values_to = "value") %>%
-  mutate(metric = factor(metric,
-                         levels = c("silhouette","db_index","ARI","purity"),
-                         labels = c("Silhouette (↑)", "DB Index (↓)", "ARI (↑)", "Purity (↑)")))
-
-ggplot(results_long, aes(x = model, y = value)) +
-  geom_col() +
-  geom_text(aes(label = round(value, 3)), vjust = -0.3, size = 3) +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  coord_flip() +
-  labs(title = "Clustering Evaluation on IMDB Reviews",
-       x = NULL, y = NULL,
-       caption = "↑ higher is better, ↓ lower is better") +
-  theme_minimal(base_size = 12) +
-  theme(panel.grid.minor = element_blank(),
-        plot.title = element_text(face = "bold"))
 
 ```
-Among all models, LDA with 5 topics shows the best overall clustering quality.
-It achieves strong internal validity (Silhouette = 0.44, DB = 1.16) and the highest external alignment with sentiment labels (ARI = 0.10, Purity = 0.69).
-NMF also produces compact clusters (high Silhouette) but with less separation between them (high DB index), suggesting overlapping topics.
-LDA with 10 topics still performs reasonably but loses some cohesion due to topic fragmentation.
-Traditional K-Means and LSA-based methods perform poorly on text data, as they fail to capture semantic relations between words.
-Overall, probabilistic models like LDA and NMF are far more effective for discovering meaningful structure in textual data than distance-based clustering methods.
+Among all models, LDA with 5 topics demonstrates the best overall clustering performance.
+It achieves strong internal validity (Silhouette = 0.61, DB = 1.20), indicating well-defined and clearly separated clusters.
+NMF also shows high compactness (Silhouette = 0.69) but a much higher DB index (10.25), suggesting that while documents within each cluster are similar, the clusters themselves are unevenly distributed or overlapping.
+LDA with 10 topics performs slightly worse (Silhouette = 0.50, DB = 1.51), likely due to topic fragmentation as the number of clusters increases.
+In contrast, K-Means and LSA + K-Means achieve very low silhouette values and high DB indices, reflecting poor separation and limited semantic structure in their clusters.
+Overall, probabilistic models such as LDA and NMF are far more effective for uncovering meaningful, interpretable patterns in textual data than traditional distance-based clustering approaches.
 
 
 # Team member contributions
