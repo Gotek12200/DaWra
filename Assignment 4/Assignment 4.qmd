@@ -217,10 +217,9 @@ clean_train %>%
 
 ```{r}
 smart_stopwords <- stopwords(source = "smart")
-stop_words <- tibble(word=smart_stopwords)
+stop_words <- tibble(word = smart_stopwords)
 df_stopwords <- stop_words %>%
   rbind(tibble(word = c(
-    # --- Woorden van vorige iteraties ---
     "br", "made", "make", "movie", "film", "films", "movies", "story",
     "plot", "character", "characters", "people", "show", "watch",
     "life", "scene", "end", "man", "time", "years", "world", "book",
@@ -335,36 +334,6 @@ kmeans_k10 <- k_means_clustering(
     )
 
 ```
-## LDA
-```{r}
-
-lda_model <- function(dtm, k, seed = 123) {
-  row_sums <- Matrix::rowSums(dtm)
-  non_empty_rows <- which(row_sums > 0)
-  dtm_filtered <- dtm[non_empty_rows, ]
-  set.seed(seed)
-  lda_model <- LDA(
-    dtm_filtered,
-    k = k,
-    method = "Gibbs",
-    control = list(seed = seed)
-  )
-  return(lda_model)
-}
-
-
-
-lda_model_k5 <- lda_model(
-    dtm,
-    k = 5
-    )
-lda_model_k10 <- lda_model(
-    dtm,
-    k = 10
-    )
-
-```
-
 ## LSA
 ```{r}
 
@@ -381,7 +350,7 @@ lsa_kmeans <- function(dtm, k, n_topics, seed = 123, nstart = 25){
     )
     return(list(
         kmeans = kmeans,
-        clusters = kmeans$clusters,
+        clusters = kmeans$cluster,
         lsa_matrix = doc_vecs_lsa
     ))
 }
@@ -397,6 +366,36 @@ lsa_kmeans_k10 <- lsa_kmeans(
   k = 10,
   n_topics = 100
 )
+
+```
+
+## LDA
+```{r}
+
+
+lda_model <- function(dtm, k, seed = 123) {
+  row_sums <- Matrix::rowSums(dtm)
+  non_empty_rows <- which(row_sums > 0)
+  dtm_filtered <- dtm[non_empty_rows, ]
+  set.seed(seed)
+  lda_model <- LDA(
+    dtm_filtered,
+    k = k,
+    method = "Gibbs",
+    control = list(seed = seed)
+  )
+  return(lda_model)
+}
+
+
+lda_model_k5 <- lda_model(
+    dtm,
+    k = 5
+    )
+lda_model_k10 <- lda_model(
+    dtm,
+    k = 10
+    )
 
 
 ```
