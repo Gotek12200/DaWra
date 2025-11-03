@@ -422,6 +422,21 @@ nmf5_clusters <- apply(W_5, 1, which.max)
 nmf10_clusters <- apply(W_10, 1, which.max)
 ```
 
+### Visualization
+```{r}
+library(ggplot2)
+
+plot_df <- data.frame(
+  cluster = as.factor(clusters)
+)
+print(ggplot(plot_df, aes(x = cluster, fill = cluster)) +
+  geom_bar() +
+  ggtitle("K-means") +
+  theme(plot.title = element_text(hjust = 0.5)))
+
+
+```
+
 # Evaluation & model comparison
 
 To compare the clustering methods, we used two internal validation metrics: the Silhouette score and the Davies–Bouldin Index (DB Index). These metrics evaluate how well the data points fit within their assigned clusters and how clearly the clusters are separated, without relying on any external labels. The Silhouette score measures how similar each document is to its own cluster compared to other clusters, while the DB Index captures how compact and distinct the clusters are from one another.
@@ -429,24 +444,32 @@ To compare the clustering methods, we used two internal validation metrics: the 
 We chose these metrics because  they capture a different aspect of clustering quality. The Silhouette score shows how well-separated and consistent the clusters are, making it a good overall measure of cluster structure. The DB Index was added as a second internal metric because it focuses on how compact and distinct the clusters are, helping confirm the Silhouette results.
 
 ```{r}
-# helper functions
+
+# calculates the average silhouette score for the clusters
+# higher values mean that points are well matched to their own cluster
 sil_medoid_mean <- function(X, centers) {
   D_obs_centers <- proxy::dist(X, centers, method = "cosine")
   Silhouette(D_obs_centers, method = "medoid")$sil_width |> mean(na.rm = TRUE)
 }
 
+# finds the average feature vector (centroid) for each cluster
 centroids_from_labels <- function(X, clusters) {
   cs <- sort(unique(clusters))
   do.call(rbind, lapply(cs, function(c) colMeans(X[clusters == c, , drop = FALSE])))
 }
 
-# use the models we  trained
+
+# using the models we already trained
+
+# K-Means was done on the DTM (count-based text representation)
 X_counts <- dtm_matrix
-km5_clusters  <- kmeans_k5$km$cluster
-km10_clusters <- kmeans_k10$km$cluster
-km5_centers   <- kmeans_k5$km$centers
+km5_clusters  <- kmeans_k5$km$cluster     # cluster labels for k = 5
+km10_clusters <- kmeans_k10$km$cluster    # cluster labels for k = 10
+km5_centers   <- kmeans_k5$km$centers     # cluster centers
 km10_centers  <- kmeans_k10$km$centers
 
+
+# LSA + K-Means: uses LSA document vectors for clustering
 X_lsa5  <- as.matrix(lsa_kmeans_k5$lsa_matrix)
 X_lsa10 <- as.matrix(lsa_kmeans_k10$lsa_matrix)
 lsa5_clusters <- lsa_kmeans_k5$kmeans$cluster
@@ -454,6 +477,8 @@ lsa10_clusters <- lsa_kmeans_k10$kmeans$cluster
 lsa5_centers  <- lsa_kmeans_k5$kmeans$centers
 lsa10_centers <- lsa_kmeans_k10$kmeans$centers
 
+
+# LDA: get topic proportions per document and assign each doc to the topic with the highest probability
 doc_topic5  <- posterior(lda_model_k5)$topics
 doc_topic10 <- posterior(lda_model_k10)$topics
 lda5_clusters  <- max.col(doc_topic5,  ties.method = "first")
@@ -461,12 +486,19 @@ lda10_clusters <- max.col(doc_topic10, ties.method = "first")
 lda5_centers   <- centroids_from_labels(doc_topic5,  lda5_clusters)
 lda10_centers  <- centroids_from_labels(doc_topic10, lda10_clusters)
 
+
+
+# NMF: get cluster assignments and centroids from topic weights
+X_nmf         <- as.matrix(W)
+nmf5_clusters <- max.col(X_nmf, ties.method = "first")
+nmf5_centers  <- as.matrix(centroids_from_labels(X_nmf, nmf5_clusters))
 X_nmf5 <- W_5
 X_nmf10 <- W_10
 nmf5_centers  <- centroids_from_labels(X_nmf5, nmf5_clusters)
 nmf10_centers <- centroids_from_labels(X_nmf10, nmf10_clusters)
 
-# silhouette scores (higher = better)
+
+# calculate silhouette scores (higher = better)
 sil_km5   <- sil_medoid_mean(X_counts, km5_centers)
 sil_km10  <- sil_medoid_mean(X_counts, km10_centers)
 sil_lsa5  <- sil_medoid_mean(X_lsa5,  lsa5_centers)
@@ -476,7 +508,8 @@ sil_lda10 <- sil_medoid_mean(doc_topic10, lda10_centers)
 sil_nmf5  <- sil_medoid_mean(X_nmf5, nmf5_centers)
 sil_nmf10 <- sil_medoid_mean(X_nmf10, nmf10_centers)
 
-# DB index (lower = better)
+
+# calculate Davies–Bouldin index (lower = better)
 db_km5   <- index.DB(X_counts, km5_clusters,  centrotypes = "centroids")$DB
 db_km10  <- index.DB(X_counts, km10_clusters, centrotypes = "centroids")$DB
 db_lsa5  <- index.DB(X_lsa5,  lsa5_clusters,  centrotypes = "centroids")$DB
@@ -486,7 +519,8 @@ db_lda10 <- index.DB(doc_topic10, lda10_clusters, centrotypes = "centroids")$DB
 db_nmf5  <- index.DB(X_nmf5, nmf5_clusters, centrotypes = "centroids")$DB
 db_nmf10 <- index.DB(X_nmf10, nmf10_clusters, centrotypes = "centroids")$DB
 
-# final results table
+
+# put all results into one table to compare models
 results <- tibble::tibble(
   model = c("K-Means (k=5)", "K-Means (k=10)",
             "LSA + K-Means (k=5)", "LSA + K-Means (k=10)",
@@ -502,16 +536,20 @@ results <- tibble::tibble(
                  db_nmf5, db_nmf10)
 )
 
+
 results
 
 
 ```
-Among all models, LDA with 5 topics demonstrates the best overall clustering performance.
-It achieves strong internal validity (Silhouette = 0.61, DB = 1.20), indicating well-defined and clearly separated clusters.
-NMF also shows high compactness (Silhouette = 0.69) but a much higher DB index (10.25), suggesting that while documents within each cluster are similar, the clusters themselves are unevenly distributed or overlapping.
-LDA with 10 topics performs slightly worse (Silhouette = 0.50, DB = 1.51), likely due to topic fragmentation as the number of clusters increases.
-In contrast, K-Means and LSA + K-Means achieve very low silhouette values and high DB indices, reflecting poor separation and limited semantic structure in their clusters.
-Overall, probabilistic models such as LDA and NMF are far more effective for uncovering meaningful, interpretable patterns in textual data than traditional distance-based clustering approaches.
+Among all models, LDA with 5 topics gives the best overall clustering results.
+It has a strong internal validity (Silhouette = 0.61, DB = 1.20), meaning its clusters are both well-defined and clearly separated from each other.
+
+NMF (k=10) also performs quite well (Silhouette = 0.56, DB = 9.57). This suggests that while the model captures meaningful structure, the clusters might still overlap a bit — they’re compact internally but not as well separated. NMF (k=5), on the other hand, shows weaker separation (DB = 29.06), probably because too few topics make it harder to capture all the variety in the data.
+
+LDA with 10 topics performs slightly worse than its k=5 version (Silhouette = 0.50, DB = 1.51), likely because increasing the number of topics causes some splitting of coherent themes.
+Meanwhile, K-Means and LSA + K-Means models show very low silhouette scores and high DB values, which means their clusters aren’t clearly separated and don’t capture the underlying semantics of the text well.
+
+Overall, probabilistic models like LDA and NMF clearly outperform traditional distance-based methods for this kind of text data, as they can better capture the hidden structure and meaning behind the words.
 
 
 # Team member contributions
@@ -519,5 +557,5 @@ Overall, probabilistic models such as LDA and NMF are far more effective for unc
 Write down what each team member contributed to the project.
 
 - Author One: a, b, c
-- Author Two: b, c, d
+- Osaro Orebor: Evaluated the models, fixed some errors and cleaned up the data.
 - Mate Csikos-Nagy: DTM matrix creation, NMF model setup
