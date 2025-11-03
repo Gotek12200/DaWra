@@ -1,19 +1,19 @@
 ---
 title: "Text clustering"
-author: 
-  - Osaro Orebor 1168827
-  - Máté Csikós-Nagy 4395565
-  - Fani Profiti 1240390
-  - Yara Yachnyk 4913329
-  - Niels Wagenaar 3133998
-date: last-modified
-format:
+author:
+- Osaro Orebor 1168827
+- Máté Csikós-Nagy 4395565
+- Fani Profiti 1240390
+- Yara Yachnyk 4913329
+- Niels Wagenaar 3133998
+  date: last-modified
+  format:
   html:
-    toc: true
-    self-contained: true
-    code-fold: true
-    df-print: kable
-execute:
+  toc: true
+  self-contained: true
+  code-fold: true
+  df-print: kable
+  execute:
   warning: false
   message: false
   echo: true
@@ -24,7 +24,6 @@ execute:
 #| echo: false
 #| warning: false
 #| message: false
-
 
 library(NMF)
 library(RColorBrewer)
@@ -41,20 +40,15 @@ library(stopwords)
 library(caTools)
 library(RcppML)
 library(scales)
-library(cluster)      
+library(cluster)
 library(proxy)
 library(clusterSim)
-library(mclust)       
-library(tibble) 
+library(mclust)
+library(tibble)
 library(dplyr)
-library(text2vec)
-library(proxyC)     
-library(cluster)   
-library(clusterSim) 
+library(proxyC)
 library(Silhouette)
-library(dplyr)
 library(Matrix)
-library(RcppML)
 ```
 
 ```{r}
@@ -66,18 +60,25 @@ movie_review <- as_tibble(movie_review)
 
 ```{r}
 glimpse(movie_review) #take a quick glance at data
-summary(movie_review) 
+summary(movie_review)
+describe(movie_review)
 sapply(movie_review, class) #identify classes of dataset variables for sentiment analysis
 table(movie_review$sentiment) #see the distribution of negative and positive reviews
 ```
 
 # Data description
-Based on the dataset "movie_review" embedded in text2vec package, we see the selection of positive and negative reviews of movie viewers, relatively evenly distributed in the dataset (2483 negative and 2517 positive reviews) denoted with score 1 if the IMDB rating was >= 7 or 0 if rating is <5 accordingly.
+Based on the dataset "movie_review" embedded in text2vec package, we see the selection of positive and negative reviews
+of movie viewers, relatively evenly distributed in the dataset (2483 negative and 2517 positive reviews) denoted with
+score 1 if the IMDB rating was >= 7 or 0 if rating is <5 accordingly.
+The function describe from psych package allows us to see important descriptive statistics characteristics of a dataset,
+for example mean, sd, and se 1) the dataset contains 5,000 observations of three variables: id, sentiment and review. 2)
+In this dataset *mean* of sentiment is 0.5, indicating that on average half the ratings are positive and half are
+negative.
+The wordcloud visualization below populates the most common words in the dataset.
 ```{r}
 #| label: eda visualization
 #| warning: false
 
-# your R code to generate the plot here
 movie_review %$% wordcloud(review, 
                            min.freq = 10, 
                            max.words = 50, 
@@ -87,104 +88,15 @@ movie_review %$% wordcloud(review,
 ```
 
 # Text pre-processing
-### Train test split
-Before starting text pre-processing steps, we first need to split the train dataset to a sample used for training, a sample used for validation during training and a test sample to check performance after the training is done. We have decided to split the train data 80:10:10 (training: validation: testing)
 
-```{r}
-split_movie_dataset <- function (movie_review, sentiment = "sentiment"){
-
-      # set seed for reproducibility
-      set.seed(123)
-
-      #first split the full data set in a 80/20 test train set then split the test val data 50/50 so they both become 10% of the full dataset
-      train_split <- sample.split(movie_review$sentiment, SplitRatio = 0.8)
-      val_split <- sample.split(movie_review$sentiment[!train_split], SplitRatio = 0.5)
-
-      # save the row indices that are part of the set
-      train_ids <- which(train_split)
-      temp_ids <- which(!train_split)
-      val_ids <- temp_ids[val_split]
-      test_ids <- temp_ids[!val_split]
-
-      # return final datasets
-      return(list(
-          train_set = movie_review[train_ids, ],
-          test_set = movie_review[test_ids, ],
-          val_set = movie_review[val_ids, ]
-      ))
-}
-
-data_splits <- split_movie_dataset(movie_review = movie_review)
-train_set <- data_splits$train_set
-val_set <- data_splits$val_set
-test_set <- data_splits$test_set
-```
-For sentimental analysis enhancement we will further on clean the text from review column based on pre-processing methods @selectedbyourgroup.
-But first, we will change sentiment column to factor class:
-
-```{r}
-train_set$sentiment <- as.factor(train_set$sentiment)
-sapply(train_set, class) #checking the factor change
-```
-Next, we will remove empty rows with no text or duplicates, which leaves us with 4996 observations.
-
-```{r}
-train_set <- train_set %>% 
-  filter(!is.na(review)) %>%
-  distinct(review, .keep_all = T)
-```
-Now, we will lowercase all the letters in the texts:
-```{r}
-clean_train_set <- train_set %>%
-  mutate(review = review %>%
-      str_to_lower() %>% # induce lowercase
-  str_squish()) #remove extra space
-```
-
-Next, we will tokenize review column:
-
-```{r}
-clean_train_set <- clean_train_set |> 
-  unnest_tokens(word, review)
-```
-
-We then received 967628 observations from 3997 reviews; now let's see the most common words from our reviews (we use ggplot function):
-
-```{r}
-clean_train_set %>%
-  mutate(word = as.character(word)) %>%
-  dplyr::count(word) %>%              # force dplyr version
-  arrange(desc(n)) %>%                # manually sort
-  head(30) %>%
-  ggplot(aes(x = n, y = reorder(word, n))) +
-  geom_col(fill = "lightblue") +
-  labs(x = "Frequency", y = "Words") +
-  theme_classic()
-```
-We see that many of the top words can be considered "stop words" since they bring no significant importance to review meanings, let's remove stop words(except for not because then we can imply window context words to identify negative or positive meanings of bigger phrases:
-
-```{r}
-stop_words <- c(
-  "the", "and", "a", "of", "to", "is", "it", "in", "this", "that", "was",
-  "as", "with", "for", "movie", "but", "film", "you", "he", "his", "are", "have", "be", "one"
-)
-stop_words <- tibble(word=stop_words)
-  clean_train <- clean_train_set %>%
-    anti_join(stop_words, by = "word")
-```
-Eventually, we are left with 663508 observations. Let's see our top words now:
-```{r}
-clean_train %>%
-  mutate(word = as.character(word)) %>%      # ensure character (not a list)
-  dplyr::count(word, name = "n") %>%         # count words
-  arrange(desc(n)) %>%                       # sort by frequency
-  slice_head(n = 30) %>%                     # keep top 30
-  ggplot(aes(x = n, y = fct_reorder(word, n))) +
-  geom_col(fill = "lightblue") +
-  labs(x = "Frequency", y = "Words") +
-  theme_classic()
-```
-There are still some stop words left, and removing them all manually might be time-consuming. Let's instead use the dataset `smart_stopwords` from `library(stopwords)` and modify it with those words that we want to use in the analysis(for example, leaving negative particles to see the negative review sensitivity). We will also add words to the "stoplist" that don't make sense for our analysis or neutral movie words that don't have sentimental signal:
+For sentimental analysis enhancement we will further on clean the text from review column based on several
+pre-processing methods. first, we converty the sentiment column to a factor and remove any empty or duplicate rows. this
+leaves us with a clean dataset. for the text itself we lowercase everything and then tokenize the reviews into
+individual words.
+when we look at the most common words it is clear there are many stopwords(like "the", "a", "is") that dont have any
+sentimental meaning. to remove them all we are using the smart_stopwords list from library(stopwords). we are modifying
+this list in two ways, we want to keep negative or other sentimental words so we filter those to remove them from our
+list. then we are also adding our own neutral, movie-specific words to the stopword list.
 
 ```{r}
 smart_stopwords <- stopwords(source = "smart")
@@ -194,64 +106,23 @@ df_stopwords <- stop_words %>%
   rbind(tibble(word = c("br", "made", "make", "movie", "film", "films", "movies", "story", "plot",
   "character", "characters", "people", "show", "watch",
   "life", "scene", "end", "man", "time")))
-#removing stop words
-  clean_train <- clean_train_set %>%
-    anti_join(df_stopwords, by = "word")
-```
-
-In the end, we received 384141 observations to work with. 
-```{r}
-# if 'word' is a list (e.g., each cell has a length-1 character), flatten it safely
-clean_train <- clean_train %>%
-  mutate(word = if (is.list(word)) purrr::map_chr(word, 1) else as.character(word))
-
-clean_train %>%
-  dplyr::count(word, name = "n") %>%   # force dplyr's count
-  arrange(desc(n)) %>%
-  slice_head(n = 30) %>%
-  ggplot(aes(x = n, y = fct_reorder(word, n))) +
-  geom_col(fill = "lightblue") +
-  labs(x = "Frequency", y = "Words") +
-  theme_classic()
-```
-
-
-```{r}
-smart_stopwords <- stopwords(source = "smart")
-stop_words <- tibble(word = smart_stopwords)
-df_stopwords <- stop_words %>%
-  rbind(tibble(word = c(
-    "br", "made", "make", "movie", "film", "films", "movies", "story",
-    "plot", "character", "characters", "people", "show", "watch",
-    "life", "scene", "end", "man", "time", "years", "world", "book",
-    "good", "bad", "like", "great", "best", "better", "little", "pretty",
-    "acting", "actors", "love", "funny", "watching", "real", "horror",
-    "thing", "things", "lot", "work", "scenes", "part", "find", "back",
-    "role", "big", "original", "cast", "10", "give", "action", "minutes",
-    "thought", "point", "fact", "making", "long", "war", "family",
-    "young", "series", "performance", "makes", "feel", "woman",
-    "excellent", "times", "girl", "played", "comedy", "music",
-    "director", "actor", "left", "guy", "father", "american", "hard", "play",
-    "2", "game", "night", "1", "match", "kind", "house", "bit", "true",
-    "script", "men", "wife", "day", "stewart", "shows"
-  )))
 
 clean_docs_data <- function (data, df_stopwords){
 
     cleaned_docs <- data %>%
-        # First, we will change sentiment column to factor class:
+        # First, we will change sentiment column to factor class
         mutate(sentiment = as.factor(sentiment)) %>%
 
         # Next, we will remove empty rows with no text or duplicates, which leaves us with 4996 observations.
         dplyr::filter(!is.na(review)) %>%
         distinct(review, .keep_all = T) %>%
 
-        # We will lowercase all the letters in the texts:
+        # We will lowercase all the letters in the texts and remove extra space
         mutate(review = review %>%
-          str_to_lower() %>% # induce lowercase
-          str_squish()) %>%  # remove extra space
+          str_to_lower() %>%
+          str_squish()) %>%
 
-        # Next, we will tokenize review column:
+        # Next, we will tokenize review column
         unnest_tokens(word, review) %>%
 
         # Removing stop words
@@ -265,18 +136,21 @@ clean_docs_data <- function (data, df_stopwords){
     return(cleaned_docs)
 
 }
+docs <- clean_docs_data(data = movie_review, df_stopwords)
 
-train_docs <- clean_docs_data(data = data_splits$train_set, df_stopwords)
-val_docs <- clean_docs_data(data = data_splits$val_set, df_stopwords)
-test_docs <- clean_docs_data(data = data_splits$test_set, df_stopwords)
 
 ```
 
 # Text representaion
-For the text representation method we selected DTM (Document-Term Matrix). In a document term matrix the rows correspond to the documents in the corpus (in our case the movie reviews) and the columns correspond to the terms in the documents (in our case the cleaned words of the reviews). The cell values are the frequency of the given word in the given document.The resulting matrix is typically very sparse, since most words appear only in a few documents. 
+For the text representation method we selected DTM (Document-Term Matrix). In a document term matrix the rows correspond
+to the documents in the corpus (in our case the movie reviews) and the columns correspond to the terms in the
+documents (in our case the cleaned words of the reviews). The cell values are the frequency of the given word in the
+given document.The resulting matrix is typically very sparse, since most words appear only in a few documents.
 
-Before creating the DTM, we also filter out infrequent terms using `term_count_min=5`, which removes words that occur fewer than 5 times in the entire corpus. This reduces noise and makes the DTM faster to process.
-after creating the DTM we filter out all the empty rows to create a filtered sparse matrix which will improve time complexity and
+Before creating the DTM, we also filter out infrequent terms using `term_count_min=5`, which removes words that occur
+fewer than 5 times in the entire corpus. This reduces noise and makes the DTM faster to process.
+after creating the DTM we filter out all the empty rows to create a filtered sparse matrix which will improve time
+complexity and
 
 ```{r}
 
@@ -308,24 +182,25 @@ build_dtm_parts <- function(docs, term_count_min = 5){
             ))
 }
 
-dtm_parts <- build_dtm_parts(train_docs)
+dtm_parts <- build_dtm_parts(docs)
 dtm <- dtm_parts$dtm
 vocab <- dtm_parts$train
 vectorizer <- dtm_parts$vectorizer
-dtm_matrix <- as.matrix(dtm)
 dtm_filtered <- dtm_parts$dtm_filtered
 
 ```
 
 # Text clustering
 ## K-MEANS CLUSTERING
-K- means clustering  is an unsupervised machine learning algorithm and shows which data points are similar based to their distance. The closer together are the data points the more similar they are. The clusters are created by assigning each data point to the nearest centroid, then iteratively the centroids are calculated again until the clusters stabilize.
+K- means clustering is an unsupervised machine learning algorithm and shows which data points are similar based to their
+distance. The closer together are the data points the more similar they are. The clusters are created by assigning each
+data point to the nearest centroid, then iteratively the centroids are calculated again until the clusters stabilize.
 ```{r}
 
-k_means_clustering <- function (dtm, k, seed = 123){
+k_means_clustering <- function (dtm_filtered, k, seed = 123){
 
     set.seed(seed)
-    km <- kmeans(dtm, centers = k)
+    km <- kmeans(dtm_filtered, centers = k)
 
     return(list(
     km = km,
@@ -333,26 +208,29 @@ k_means_clustering <- function (dtm, k, seed = 123){
     ))
 }
 kmeans_k5 <- k_means_clustering(
-    dtm = dtm_filtered,
+    dtm_filtered = dtm_filtered,
     k = 5
     )
 kmeans_k10 <- k_means_clustering(
-    dtm = dtm_filtered,
+    dtm_filtered = dtm_filtered,
     k = 10
     )
 
 ```
 ## LSA + kmeans
-looking at the data we can see that we have a very high dimensionality. kmeans clustering usually performs very bad on a DTM because of the curse of dimensionality. LSA will solve this problem by dimensionality reduction.
-It uses a method called Singular Value Decomposition to reduce the dimensions to, in our case n_topics = 100, "latent concepts". after we have reduced the data to a dense matrix that sees the underlying semantics of the reviews we should be able to successfully perform k-means clustering.
+looking at the data we can see that we have a very high dimensionality. kmeans clustering usually performs very bad on a
+DTM because of the curse of dimensionality. LSA will solve this problem by dimensionality reduction.
+It uses a method called Singular Value Decomposition to reduce the dimensions to, in our case n_topics = 100, "latent
+concepts". after we have reduced the data to a dense matrix that sees the underlying semantics of the reviews we should
+be able to successfully perform k-means clustering.
 
 
 ```{r}
 
-lsa_kmeans <- function(dtm, k, n_topics, seed = 123, nstart = 25){
+lsa_kmeans <- function(dtm_filtered, k, n_topics, seed = 123, nstart = 25){
 
     lsa_model <- LSA$new(n_topics = n_topics)
-    doc_vecs_lsa <- lsa_model$fit_transform(dtm)
+    doc_vecs_lsa <- lsa_model$fit_transform(dtm_filtered)
 
     set.seed(seed)
     kmeans <- kmeans(
@@ -368,13 +246,13 @@ lsa_kmeans <- function(dtm, k, n_topics, seed = 123, nstart = 25){
 }
 
 lsa_kmeans_k5 <- lsa_kmeans(
-  dtm = dtm_filtered,
+  dtm_filtered = dtm_filtered,
   k = 5,
   n_topics = 100
 )
 
 lsa_kmeans_k10 <- lsa_kmeans(
-  dtm = dtm_filtered,
+  dtm_filtered = dtm_filtered,
   k = 10,
   n_topics = 100
 )
@@ -382,14 +260,15 @@ lsa_kmeans_k10 <- lsa_kmeans(
 ```
 
 ## LDA
+LDA is probabilistic generative model used for topic modelling. it assumes each document in the dtm is a mixture of latent topics, and each topic is a probability distribution over the entire vocabulary. it infers this structure by analyzing word co-occurences. we are applying LDA to our "dtm_filtered" using gibbs sampling, this takes a bit longer but it is more likely to find the best topics in our data because it is a stochastic search and not a deterministic search.
+
 ```{r}
 
-
-lda_model <- function(dtm, k, seed = 123) {
+lda_model <- function(dtm_filtered, k, seed = 123) {
 
   set.seed(seed)
   lda_model <- LDA(
-    dtm,
+    dtm_filtered,
     k = k,
     method = "Gibbs",
     control = list(seed = seed)
@@ -399,20 +278,25 @@ lda_model <- function(dtm, k, seed = 123) {
 
 
 lda_model_k5 <- lda_model(
-    dtm = dtm_filtered,
+    dtm_filtered = dtm_filtered,
     k = 5
     )
 lda_model_k10 <- lda_model(
-    dtm = dtm_filtered,
+    dtm_filtered = dtm_filtered,
     k = 10
     )
 
 
 ```
 ## NMF
-Non-Negative Matrix Factorization works by decomposing a matrix into two smaller matrices W and H, so that W * H approximates the original matrix. In our case, W will be the document-topic matrix (rows will be the documents and columns are the "topics" or clusters), and H will be the topic-term matrix (rows the topics and columns the words). Each entry in W indicates the strength of association between a document and a topic and each entry in H indicates the importance of a term for a given topic.
+Non-Negative Matrix Factorization works by decomposing a matrix into two smaller matrices W and H, so that W * H
+approximates the original matrix. In our case, W will be the document-topic matrix (rows will be the documents and
+columns are the "topics" or clusters), and H will be the topic-term matrix (rows the topics and columns the words). Each
+entry in W indicates the strength of association between a document and a topic and each entry in H indicates the
+importance of a term for a given topic.
 
-Since all the values are non-negative, NMF produces representations that work with additions (for instance, topics are combinations of words), so the result is easy to interpret.
+Since all the values are non-negative, NMF produces representations that work with additions (for instance, topics are
+combinations of words), so the result is easy to interpret.
 ```{r}
 # Running the models using a method that is able to take a sparse matrix which will also speed up the process
 nmf_res_5 <- RcppML::nmf(dtm_filtered, k = 5, seed = 123)
@@ -432,9 +316,16 @@ nmf10_clusters <- apply(W_10, 1, which.max)
 ```
 # Evaluation & model comparison
 
-To compare the clustering methods, we used two internal validation metrics: the Silhouette score and the Davies–Bouldin Index (DB Index). These metrics evaluate how well the data points fit within their assigned clusters and how clearly the clusters are separated, without relying on any external labels. The Silhouette score measures how similar each document is to its own cluster compared to other clusters, while the DB Index captures how compact and distinct the clusters are from one another.
+To compare the clustering methods, we used two internal validation metrics: the Silhouette score and the Davies–Bouldin
+Index (DB Index). These metrics evaluate how well the data points fit within their assigned clusters and how clearly the
+clusters are separated, without relying on any external labels. The Silhouette score measures how similar each document
+is to its own cluster compared to other clusters, while the DB Index captures how compact and distinct the clusters are
+from one another.
 
-We chose these metrics because  they capture a different aspect of clustering quality. The Silhouette score shows how well-separated and consistent the clusters are, making it a good overall measure of cluster structure. The DB Index was added as a second internal metric because it focuses on how compact and distinct the clusters are, helping confirm the Silhouette results.
+We chose these metrics because they capture a different aspect of clustering quality. The Silhouette score shows how
+well-separated and consistent the clusters are, making it a good overall measure of cluster structure. The DB Index was
+added as a second internal metric because it focuses on how compact and distinct the clusters are, helping confirm the
+Silhouette results.
 
 ```{r}
 
@@ -534,20 +425,29 @@ results
 
 ```
 Among all models, LDA with 5 topics gives the best overall clustering results.
-It has a strong internal validity (Silhouette = 0.61, DB = 1.20), meaning its clusters are both well-defined and clearly separated from each other.
+It has a strong internal validity (Silhouette = 0.61, DB = 1.20), meaning its clusters are both well-defined and clearly
+separated from each other.
 
-NMF (k=10) also performs quite well (Silhouette = 0.56, DB = 9.57). This suggests that while the model captures meaningful structure, the clusters might still overlap a bit — they’re compact internally but not as well separated. NMF (k=5), on the other hand, shows weaker separation (DB = 29.06), probably because too few topics make it harder to capture all the variety in the data.
+NMF (k=10) also performs quite well (Silhouette = 0.56, DB = 9.57). This suggests that while the model captures
+meaningful structure, the clusters might still overlap a bit — they’re compact internally but not as well separated.
+NMF (k=5), on the other hand, shows weaker separation (DB = 29.06), probably because too few topics make it harder to
+capture all the variety in the data.
 
-LDA with 10 topics performs slightly worse than its k=5 version (Silhouette = 0.50, DB = 1.51), likely because increasing the number of topics causes some splitting of coherent themes.
-Meanwhile, K-Means and LSA + K-Means models show very low silhouette scores and high DB values, which means their clusters aren’t clearly separated and don’t capture the underlying semantics of the text well.
+LDA with 10 topics performs slightly worse than its k=5 version (Silhouette = 0.50, DB = 1.51), likely because
+increasing the number of topics causes some splitting of coherent themes.
+Meanwhile, K-Means and LSA + K-Means models show very low silhouette scores and high DB values, which means their
+clusters aren’t clearly separated and don’t capture the underlying semantics of the text well.
 
-Overall, probabilistic models like LDA and NMF clearly outperform traditional distance-based methods for this kind of text data, as they can better capture the hidden structure and meaning behind the words.
+Overall, probabilistic models like LDA and NMF clearly outperform traditional distance-based methods for this kind of
+text data, as they can better capture the hidden structure and meaning behind the words.
 
 
 # Team member contributions
 
 Write down what each team member contributed to the project.
 
-- Author One: a, b, c
 - Osaro Orebor: Evaluated the models, fixed some errors and cleaned up the data.
 - Mate Csikos-Nagy: DTM matrix creation, NMF model setup
+- Yara Yachnyk: describing data, performing text pre-processing
+- Niels Wagenaar:  created function of clean_docs_data, build_dtm_parts, LSA and LDA clustering. finalized the whole
+  report.
